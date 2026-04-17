@@ -44,6 +44,8 @@ Inspect collected events:
 sqlite3 hive.db 'SELECT method, client_name, response_summary FROM events ORDER BY id DESC LIMIT 20;'
 ```
 
+For deploying the honeypot on a public VPS with HTTPS, see [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
 <details>
 <summary>Example session output</summary>
 
