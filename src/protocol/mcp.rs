@@ -119,7 +119,9 @@ mod tests {
         let r = InitializeResult {
             protocol_version: PROTOCOL_VERSION.to_string(),
             capabilities: ServerCapabilities {
-                tools: Some(ToolsCapability { list_changed: Some(false) }),
+                tools: Some(ToolsCapability {
+                    list_changed: Some(false),
+                }),
                 ..Default::default()
             },
             server_info: ServerInfo {

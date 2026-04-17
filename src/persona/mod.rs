@@ -91,7 +91,9 @@ impl Persona {
         self.tools
             .iter()
             .find(|t| t.name == tool_name)
-            .map(|t| ToolContent::Text { text: t.response.clone() })
+            .map(|t| ToolContent::Text {
+                text: t.response.clone(),
+            })
     }
 }
 

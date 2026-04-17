@@ -53,14 +53,15 @@ impl Session {
             "initialize" => self.on_initialize(req),
             "tools/list" => self.on_tools_list(req),
             "tools/call" => self.on_tools_call(req),
-            "notifications/initialized" | "notifications/cancelled" => {
-                ("noop".to_string(), None)
-            }
+            "notifications/initialized" | "notifications/cancelled" => ("noop".to_string(), None),
             other => (
                 format!("method-not-found:{other}"),
                 Some(JsonRpcResponse::err(
                     req.id.clone().unwrap_or(RequestId::Null),
-                    JsonRpcError::new(ErrorCode::MethodNotFound, format!("unknown method: {other}")),
+                    JsonRpcError::new(
+                        ErrorCode::MethodNotFound,
+                        format!("unknown method: {other}"),
+                    ),
                 )),
             ),
         };
@@ -101,7 +102,9 @@ impl Session {
         let result = InitializeResult {
             protocol_version: PROTOCOL_VERSION.to_string(),
             capabilities: ServerCapabilities {
-                tools: Some(ToolsCapability { list_changed: Some(false) }),
+                tools: Some(ToolsCapability {
+                    list_changed: Some(false),
+                }),
                 ..Default::default()
             },
             server_info: self.persona.server_info(),
