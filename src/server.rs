@@ -1,8 +1,18 @@
-//! Dispatch layer: takes a JSON-RPC request, produces a response, and logs the interaction.
+//! Dispatch layer: turns a JSON-RPC request + transport context into a response, and logs
+//! the interaction.
+//!
+//! One `Dispatcher` is shared across all sessions (it owns the persona and logger). Per-
+//! session mutable state (e.g. the client name captured during `initialize`) lives in a
+//! small per-session record keyed by `RequestContext::session_id`.
+
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use anyhow::Result;
+use async_trait::async_trait;
 use serde_json::Value;
-use tracing::{debug, info, warn};
+use tokio::sync::Mutex;
+use tracing::{debug, warn};
 
 use crate::logger::{hash_params, now_ms, LogEntry, Logger};
 use crate::persona::Persona;
@@ -11,80 +21,46 @@ use crate::protocol::{
     RequestId, ServerCapabilities, ToolCallParams, ToolCallResult, ToolsCapability,
     ToolsListResult, PROTOCOL_VERSION,
 };
-use crate::transport::Transport;
+use crate::transport::{Handler, RequestContext};
 
-/// State shared across all requests in a single connection.
-pub struct Session {
-    pub id: String,
-    pub persona: Persona,
-    pub logger: Logger,
+#[derive(Default, Clone, Debug)]
+pub struct SessionState {
     pub client_name: Option<String>,
     pub client_version: Option<String>,
 }
 
-impl Session {
-    pub fn new(id: String, persona: Persona, logger: Logger) -> Self {
+pub struct Dispatcher {
+    persona: Arc<Persona>,
+    logger: Logger,
+    sessions: Mutex<HashMap<String, Arc<Mutex<SessionState>>>>,
+}
+
+impl Dispatcher {
+    pub fn new(persona: Persona, logger: Logger) -> Self {
         Self {
-            id,
-            persona,
+            persona: Arc::new(persona),
             logger,
-            client_name: None,
-            client_version: None,
+            sessions: Mutex::new(HashMap::new()),
         }
     }
 
-    /// Main event loop: pull requests off the transport, dispatch, write responses.
-    pub async fn run<T: Transport>(&mut self, transport: &mut T) -> Result<()> {
-        info!(session = %self.id, persona = %self.persona.name, "session started");
-        while let Some(req) = transport.recv().await? {
-            let response = self.handle(&req).await;
-            // Notifications (no id) get no response — but we still log them.
-            if let Some(resp) = response {
-                transport.send(&resp).await?;
-            }
-        }
-        info!(session = %self.id, "session ended");
-        Ok(())
+    pub fn persona(&self) -> &Persona {
+        &self.persona
     }
 
-    async fn handle(&mut self, req: &JsonRpcRequest) -> Option<JsonRpcResponse> {
-        let id_for_response = req.id.clone();
-        let (response, summary) = match req.method.as_str() {
-            "initialize" => self.on_initialize(req),
-            "tools/list" => self.on_tools_list(req),
-            "tools/call" => self.on_tools_call(req),
-            "notifications/initialized" | "notifications/cancelled" => ("noop".to_string(), None),
-            other => (
-                format!("method-not-found:{other}"),
-                Some(JsonRpcResponse::err(
-                    req.id.clone().unwrap_or(RequestId::Null),
-                    JsonRpcError::new(
-                        ErrorCode::MethodNotFound,
-                        format!("unknown method: {other}"),
-                    ),
-                )),
-            ),
-        };
-
-        self.log_interaction(req, &response).await;
-
-        if req.is_notification() {
-            return None;
-        }
-
-        match summary {
-            Some(resp) => Some(resp),
-            None => id_for_response.map(|id| {
-                warn!(method = %req.method, "handler returned no response for a request");
-                JsonRpcResponse::err(
-                    id,
-                    JsonRpcError::new(ErrorCode::InternalError, "no response"),
-                )
-            }),
-        }
+    async fn session_state(&self, id: &str) -> Arc<Mutex<SessionState>> {
+        let mut sessions = self.sessions.lock().await;
+        sessions
+            .entry(id.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(SessionState::default())))
+            .clone()
     }
 
-    fn on_initialize(&mut self, req: &JsonRpcRequest) -> (String, Option<JsonRpcResponse>) {
+    fn on_initialize(
+        &self,
+        req: &JsonRpcRequest,
+        state: &mut SessionState,
+    ) -> (String, Option<JsonRpcResponse>) {
         let id = match req.id.clone() {
             Some(id) => id,
             None => return ("initialize-without-id".into(), None),
@@ -95,8 +71,8 @@ impl Session {
         };
         if let Ok(p) = &parsed {
             if let Some(ci) = &p.client_info {
-                self.client_name = Some(ci.name.clone());
-                self.client_version = Some(ci.version.clone());
+                state.client_name = Some(ci.name.clone());
+                state.client_version = Some(ci.version.clone());
             }
         }
         let result = InitializeResult {
@@ -114,7 +90,7 @@ impl Session {
         (
             format!(
                 "initialize ok, client={}",
-                self.client_name.as_deref().unwrap_or("?")
+                state.client_name.as_deref().unwrap_or("?")
             ),
             Some(JsonRpcResponse::ok(id, value)),
         )
@@ -188,21 +164,73 @@ impl Session {
         }
     }
 
-    async fn log_interaction(&self, req: &JsonRpcRequest, summary: &str) {
+    async fn log_interaction(
+        &self,
+        req: &JsonRpcRequest,
+        summary: &str,
+        ctx: &RequestContext,
+        state: &SessionState,
+    ) {
         let entry = LogEntry {
             timestamp_ms: now_ms(),
             method: req.method.clone(),
             params_hash: hash_params(&req.params),
             params: req.params.clone(),
-            client_name: self.client_name.clone(),
-            client_version: self.client_version.clone(),
-            session_id: self.id.clone(),
+            client_name: state.client_name.clone(),
+            client_version: state.client_version.clone(),
+            session_id: ctx.session_id.clone(),
             response_summary: summary.to_string(),
         };
         if let Err(e) = self.logger.record(&entry).await {
             warn!(error = %e, "failed to persist log entry");
         } else {
-            debug!(method = %req.method, "logged event");
+            debug!(method = %req.method, transport = %ctx.transport, "logged event");
+        }
+    }
+}
+
+#[async_trait]
+impl Handler for Dispatcher {
+    async fn handle_request(
+        &self,
+        req: JsonRpcRequest,
+        ctx: RequestContext,
+    ) -> Option<JsonRpcResponse> {
+        let state_lock = self.session_state(&ctx.session_id).await;
+        let mut state = state_lock.lock().await;
+
+        let (summary, response) = match req.method.as_str() {
+            "initialize" => self.on_initialize(&req, &mut state),
+            "tools/list" => self.on_tools_list(&req),
+            "tools/call" => self.on_tools_call(&req),
+            "notifications/initialized" | "notifications/cancelled" => ("noop".to_string(), None),
+            other => (
+                format!("method-not-found:{other}"),
+                Some(JsonRpcResponse::err(
+                    req.id.clone().unwrap_or(RequestId::Null),
+                    JsonRpcError::new(
+                        ErrorCode::MethodNotFound,
+                        format!("unknown method: {other}"),
+                    ),
+                )),
+            ),
+        };
+
+        self.log_interaction(&req, &summary, &ctx, &state).await;
+
+        if req.is_notification() {
+            return None;
+        }
+
+        match response {
+            Some(resp) => Some(resp),
+            None => req.id.map(|id| {
+                warn!(method = %req.method, "handler returned no response for a request");
+                JsonRpcResponse::err(
+                    id,
+                    JsonRpcError::new(ErrorCode::InternalError, "no response"),
+                )
+            }),
         }
     }
 }
@@ -210,10 +238,9 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::persona::Persona;
     use tempfile::tempdir;
 
-    async fn make_session() -> (Session, tempfile::TempDir) {
+    async fn make_dispatcher() -> (Arc<Dispatcher>, tempfile::TempDir) {
         let persona = Persona::from_yaml_str(
             r#"
 name: test
@@ -227,12 +254,13 @@ tools:
         let dir = tempdir().unwrap();
         let db = dir.path().join("db.sqlite");
         let logger = Logger::open(&db, None).await.unwrap();
-        (Session::new("s1".into(), persona, logger), dir)
+        (Arc::new(Dispatcher::new(persona, logger)), dir)
     }
 
     #[tokio::test]
-    async fn initialize_returns_server_info_and_logs_event() {
-        let (mut s, _dir) = make_session().await;
+    async fn initialize_returns_server_info_and_captures_client_info() {
+        let (d, _dir) = make_dispatcher().await;
+        let ctx = RequestContext::new("s1", "stdio");
         let req = JsonRpcRequest {
             jsonrpc: "2.0".into(),
             method: "initialize".into(),
@@ -243,23 +271,27 @@ tools:
             })),
             id: Some(RequestId::Number(1)),
         };
-        let resp = s.handle(&req).await.expect("response");
+        let resp = d.handle_request(req, ctx.clone()).await.expect("response");
         let result = resp.result.unwrap();
         assert_eq!(result["serverInfo"]["name"], "test");
-        assert_eq!(s.client_name.as_deref(), Some("attacker"));
-        assert_eq!(s.logger.count_events().await.unwrap(), 1);
+
+        let state = d.session_state(&ctx.session_id).await;
+        let state = state.lock().await;
+        assert_eq!(state.client_name.as_deref(), Some("attacker"));
+        assert_eq!(d.logger.count_events().await.unwrap(), 1);
     }
 
     #[tokio::test]
     async fn tools_call_returns_canned_response() {
-        let (mut s, _dir) = make_session().await;
+        let (d, _dir) = make_dispatcher().await;
+        let ctx = RequestContext::new("s1", "stdio");
         let req = JsonRpcRequest {
             jsonrpc: "2.0".into(),
             method: "tools/call".into(),
             params: Some(serde_json::json!({"name": "echo", "arguments": {}})),
             id: Some(RequestId::Number(2)),
         };
-        let resp = s.handle(&req).await.expect("response");
+        let resp = d.handle_request(req, ctx).await.expect("response");
         let result = resp.result.unwrap();
         assert_eq!(result["content"][0]["type"], "text");
         assert_eq!(result["content"][0]["text"], "hello");
@@ -267,14 +299,15 @@ tools:
 
     #[tokio::test]
     async fn unknown_method_returns_method_not_found() {
-        let (mut s, _dir) = make_session().await;
+        let (d, _dir) = make_dispatcher().await;
+        let ctx = RequestContext::new("s1", "stdio");
         let req = JsonRpcRequest {
             jsonrpc: "2.0".into(),
             method: "resources/list".into(),
             params: None,
             id: Some(RequestId::Number(3)),
         };
-        let resp = s.handle(&req).await.expect("response");
+        let resp = d.handle_request(req, ctx).await.expect("response");
         assert!(resp.error.is_some());
         assert_eq!(resp.error.unwrap().code, ErrorCode::MethodNotFound as i32);
     }

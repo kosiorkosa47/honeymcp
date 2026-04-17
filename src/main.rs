@@ -1,6 +1,7 @@
-//! honeymcp CLI. Loads a persona, opens the logger, and runs a session over stdio.
+//! honeymcp CLI. Loads a persona, opens the logger, and runs a transport.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::Result;
 use clap::Parser;
@@ -9,8 +10,9 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use honeymcp::logger::Logger;
 use honeymcp::persona::Persona;
-use honeymcp::server::Session;
+use honeymcp::server::Dispatcher;
 use honeymcp::transport::stdio::StdioTransport;
+use honeymcp::transport::Transport;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -46,10 +48,10 @@ async fn main() -> Result<()> {
     info!(persona = %persona.name, tools = persona.tools.len(), "persona loaded");
 
     let logger = Logger::open(&cli.db, cli.jsonl.as_deref()).await?;
+    let dispatcher = Arc::new(Dispatcher::new(persona, logger));
 
-    let mut transport = StdioTransport::from_std();
-    let session_id = format!("{}-{}", persona.name, honeymcp::logger::now_ms());
-    let mut session = Session::new(session_id, persona, logger);
-    session.run(&mut transport).await?;
+    let session_id = format!("stdio-{}", honeymcp::logger::now_ms());
+    let mut transport = StdioTransport::from_std(session_id);
+    transport.run(dispatcher).await?;
     Ok(())
 }
