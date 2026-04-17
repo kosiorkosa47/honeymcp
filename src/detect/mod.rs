@@ -18,6 +18,7 @@ pub mod prompt_injection;
 pub mod recon;
 pub mod secret_exfil;
 pub mod shell_injection;
+pub mod tool_enumeration;
 pub mod unicode_anomaly;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -108,6 +109,7 @@ impl Registry {
                 Box::new(secret_exfil::SecretExfilDetector),
                 Box::new(cve_59536::Cve59536Detector),
                 Box::new(unicode_anomaly::UnicodeAnomalyDetector),
+                Box::new(tool_enumeration::ToolEnumerationDetector),
             ],
         }
     }

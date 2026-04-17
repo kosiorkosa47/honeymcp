@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.2] - 2026-04-17 (Day 3 night)
+
+### Added
+- Seventh detector: `tool_enumeration` fires when a single session invokes
+  `tools/call` more than six times across different tool names, a scanner
+  signature.
+- SecretExfilDetector now covers `/etc/passwd`, `/etc/group`, `/proc/*/environ`,
+  `.git-credentials`, `.ssh/known_hosts`, `.aws/config`, `.npmrc`, `.pypirc`,
+  `credentials.json`, `service-account.json`, Anthropic `sk-ant-` key prefix,
+  literal AWS `AKIA/ASIA` access-key ids in payloads, and inline
+  `-----BEGIN * PRIVATE KEY-----` headers.
+
 ## [0.3.1] - 2026-04-17 (Day 3 evening)
 
 ### Added

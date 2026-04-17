@@ -14,11 +14,12 @@ Full writeup just published:
 
 ## 2/5
 
-Six threat detectors shipped today:
+Seven threat detectors shipped today:
 
 - prompt_injection_markers
 - shell_injection_patterns
 - recon_pattern
+- tool_enumeration
 - secret_exfil_targets
 - cve_2025_59536_config_injection
 - unicode_anomaly
@@ -38,7 +39,7 @@ Each is a complete fake MCP server identity in YAML. Canned responses for common
 
 Stack: Rust, axum, tokio, rusqlite. Ships as a 35 MB Docker image. $7/mo on Lightsail Singapore. Deployment guide in the repo.
 
-Live dashboard: http://54.169.235.208:8080/dashboard
+Live dashboard: http://54.169.235.208/dashboard
 
 ## 5/5
 

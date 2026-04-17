@@ -8,7 +8,7 @@
 
 **Status:** Day 3 of 30 - building in public.
 
-**Live:** [honeypot dashboard](http://54.169.235.208:8080/dashboard) (Singapore, Lightsail).
+**Live:** [honeypot dashboard](http://54.169.235.208/dashboard) (Singapore, Lightsail).
 
 ## Why
 

@@ -87,14 +87,15 @@ POST `/message` returns the JSON-RPC response in the body AND forwards a copy to
 
 ### Day 3 - detection + third persona + /stats
 
-Day 3 was the first day with real adversarial content. I wrote six threat detectors:
+Day 3 was the first day with real adversarial content. I wrote seven threat detectors:
 
 | Detector | Category | Fires on |
 |----------|----------|----------|
 | `prompt_injection_markers` | PromptInjection | "ignore previous", "<\|im_start\|>", role tokens, multi-lingual variants |
 | `shell_injection_patterns` | CommandInjection | `$(...)`, backticks, `curl \| sh`, chained exec |
 | `recon_pattern` | Recon | Repeated `tools/list`, `tools/call` before `initialize` |
-| `secret_exfil_targets` | SecretExfil | `.env`, SSH keys, cloud creds, GitHub/OpenAI tokens |
+| `tool_enumeration` | Recon | More than six distinct `tools/call` in one session (scanner signature) |
+| `secret_exfil_targets` | SecretExfil | `.env`, `/etc/passwd`, SSH keys, AWS/GCP/GitHub/OpenAI/Anthropic tokens, inline PEM headers |
 | `cve_2025_59536_config_injection` | SupplyChain | `.claude/settings.json` + hook registration |
 | `unicode_anomaly` | UnicodeAnomaly | Zero-width, bidi overrides, tag-block glyphs |
 
@@ -144,7 +145,7 @@ The one thing that cost me 10 minutes: Docker volumes. The container runs as non
 
 **No meaningful telemetry yet.** The honeypot has been on the internet for a few hours. That is not enough time for a fresh IP with no inbound signal to attract anything beyond incidental port scanners. Realistic first attack window: 24-72 hours. First data-drop post probably Day 5 or 6.
 
-**No live dashboard.** `/stats` returns JSON; I will wire a vanilla-JS polling page on top next. 30 minutes of work.
+**Basic dashboard only.** `GET /dashboard` renders a terminal-themed vanilla JS page that polls `/stats` every 5 s. Good enough for day 3; no per-session drill-down or time-series yet.
 
 **No sampling attack.** MCP now has a `sampling/createMessage` method where the server asks the client for completions - an inverted attack surface. I am not emulating it yet. On the roadmap.
 

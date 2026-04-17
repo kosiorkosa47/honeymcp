@@ -20,21 +20,40 @@ fn pattern() -> &'static Regex {
             (
                 \.env(?:\.[a-z0-9_-]+)?\b
               | \.git/config\b
+              | \.git-credentials\b
               | id_rsa(\.pub)?\b
               | id_ed25519(\.pub)?\b
+              | id_ecdsa(\.pub)?\b
               | \.ssh/authorized_keys\b
+              | \.ssh/known_hosts\b
               | aws[_-]?access[_-]?key[_-]?id\b
               | aws[_-]?secret[_-]?access[_-]?key\b
               | \.aws/credentials\b
+              | \.aws/config\b
               | access[_-]?token\b
-              | bearer\s+[a-z0-9\-_]{10,}
-              | gh[pousr]_[a-z0-9]{20,}    # GitHub token formats
-              | sk-[a-z0-9]{20,}            # OpenAI-style key
-              | glpat-[a-z0-9_-]{20,}       # GitLab PAT
-              | xox[baprs]-[a-z0-9-]{10,}   # Slack token
+              | bearer\s+[a-z0-9\-_.]{10,}
+              | gh[pousr]_[a-z0-9]{20,}           # GitHub token formats
+              | sk-[a-z0-9]{20,}                   # OpenAI-style key
+              | sk-ant-[a-z0-9\-_]{20,}            # Anthropic key prefix
+              | glpat-[a-z0-9_-]{20,}              # GitLab PAT
+              | xox[baprs]-[a-z0-9-]{10,}          # Slack token
+              | AKIA[0-9A-Z]{16}                   # AWS access key id format
+              | ASIA[0-9A-Z]{16}                   # AWS STS
+              | /etc/passwd\b
               | /etc/shadow\b
+              | /etc/group\b
+              | /proc/self/environ\b
+              | /proc/[0-9]+/environ\b
               | \.kube/config\b
+              | \.kubeconfig\b
+              | kubeconfig\.yaml\b
               | docker[-_]?config\.json\b
+              | \.npmrc\b
+              | \.pypirc\b
+              | \.dockercfg\b
+              | credentials\.json\b
+              | service[-_]?account\.json\b
+              | -----BEGIN\s+(?:RSA|OPENSSH|EC|DSA|PRIVATE)[\s\w]*PRIVATE\s+KEY-----
             )
             ",
         )
@@ -100,5 +119,45 @@ mod tests {
             json!({"name":"read_file","arguments":{"path":"docs/architecture.md"}}),
         );
         assert!(SecretExfilDetector.analyze(&ctx(&e, &s)).is_none());
+    }
+
+    #[test]
+    fn triggers_on_etc_passwd() {
+        let s = SessionStats::default();
+        let e = make_entry(
+            "tools/call",
+            json!({"name":"read_file","arguments":{"path":"/etc/passwd"}}),
+        );
+        assert!(SecretExfilDetector.analyze(&ctx(&e, &s)).is_some());
+    }
+
+    #[test]
+    fn triggers_on_anthropic_api_key() {
+        let s = SessionStats::default();
+        let e = make_entry(
+            "tools/call",
+            json!({"name":"auth","arguments":{"key":"sk-ant-api01-abcdefghijklmnopqrstuvwxyz0123456789"}}),
+        );
+        assert!(SecretExfilDetector.analyze(&ctx(&e, &s)).is_some());
+    }
+
+    #[test]
+    fn triggers_on_aws_akia_literal_in_payload() {
+        let s = SessionStats::default();
+        let e = make_entry(
+            "tools/call",
+            json!({"name":"deploy","arguments":{"cred":"AKIAIOSFODNN7EXAMPLE"}}),
+        );
+        assert!(SecretExfilDetector.analyze(&ctx(&e, &s)).is_some());
+    }
+
+    #[test]
+    fn triggers_on_inline_private_key_header() {
+        let s = SessionStats::default();
+        let e = make_entry(
+            "tools/call",
+            json!({"name":"note","arguments":{"body":"-----BEGIN RSA PRIVATE KEY-----"}}),
+        );
+        assert!(SecretExfilDetector.analyze(&ctx(&e, &s)).is_some());
     }
 }
