@@ -178,12 +178,7 @@ impl Logger {
     }
 }
 
-fn add_column_if_missing(
-    db: &Connection,
-    table: &str,
-    column: &str,
-    col_type: &str,
-) -> Result<()> {
+fn add_column_if_missing(db: &Connection, table: &str, column: &str, col_type: &str) -> Result<()> {
     let existing: Vec<String> = db
         .prepare(&format!("PRAGMA table_info({table})"))?
         .query_map([], |r| r.get::<_, String>(1))?

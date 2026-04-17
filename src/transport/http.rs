@@ -210,12 +210,7 @@ async fn message_handler(
             let _ = tx.send(body.clone());
         }
 
-        (
-            StatusCode::OK,
-            [("content-type", "application/json")],
-            body,
-        )
-            .into_response()
+        (StatusCode::OK, [("content-type", "application/json")], body).into_response()
     } else {
         // Notification — no response body.
         StatusCode::ACCEPTED.into_response()
