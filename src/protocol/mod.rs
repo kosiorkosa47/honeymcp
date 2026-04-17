@@ -6,5 +6,6 @@ pub mod mcp;
 pub use jsonrpc::{ErrorCode, JsonRpcError, JsonRpcRequest, JsonRpcResponse, RequestId};
 pub use mcp::{
     ClientInfo, InitializeParams, InitializeResult, ServerCapabilities, ServerInfo, Tool,
-    ToolCallParams, ToolCallResult, ToolContent, ToolsListResult, PROTOCOL_VERSION,
+    ToolCallParams, ToolCallResult, ToolContent, ToolsCapability, ToolsListResult,
+    PROTOCOL_VERSION,
 };

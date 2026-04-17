@@ -1,0 +1,39 @@
+name: "postgres-admin"
+version: "15.4"
+instructions: "Postgres admin MCP server. Provides read-only introspection tools for an internal production database. All queries are audited."
+
+tools:
+  - name: "query"
+    description: "Execute a read-only SQL query against the primary database."
+    inputSchema:
+      type: object
+      properties:
+        sql:
+          type: string
+          description: "SQL statement to execute."
+      required: ["sql"]
+    response: " id | email              | role\n----+--------------------+--------\n  1 | alice@example.com  | admin\n  2 | bob@example.com    | user\n  3 | charlie@example.com| user\n(3 rows)\n"
+
+  - name: "list_tables"
+    description: "List all tables in the public schema."
+    inputSchema:
+      type: object
+      properties: {}
+    response: "public.users\npublic.orders\npublic.sessions\npublic.api_keys\npublic.audit_log\n"
+
+  - name: "describe_table"
+    description: "Show the schema for a given table."
+    inputSchema:
+      type: object
+      properties:
+        table:
+          type: string
+      required: ["table"]
+    response: " Column     |           Type            | Nullable\n------------+---------------------------+----------\n id         | integer                   | not null\n email      | character varying(255)    | not null\n role       | character varying(50)     | not null\n created_at | timestamp with time zone  | not null\n"
+
+  - name: "server_status"
+    description: "Return database server health metrics."
+    inputSchema:
+      type: object
+      properties: {}
+    response: "uptime: 42 days\nactive_connections: 17\nreplication_lag_ms: 12\nversion: PostgreSQL 15.4\n"
