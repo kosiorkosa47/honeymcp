@@ -180,6 +180,10 @@ impl Dispatcher {
             client_version: state.client_version.clone(),
             session_id: ctx.session_id.clone(),
             response_summary: summary.to_string(),
+            transport: Some(ctx.transport.to_string()),
+            remote_addr: ctx.remote_addr.clone(),
+            user_agent: ctx.user_agent.clone(),
+            client_meta: ctx.client_meta.clone(),
         };
         if let Err(e) = self.logger.record(&entry).await {
             warn!(error = %e, "failed to persist log entry");

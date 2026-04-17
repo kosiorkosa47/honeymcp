@@ -25,6 +25,14 @@ pub struct LogEntry {
     pub client_version: Option<String>,
     pub session_id: String,
     pub response_summary: String,
+    #[serde(default)]
+    pub transport: Option<String>,
+    #[serde(default)]
+    pub remote_addr: Option<String>,
+    #[serde(default)]
+    pub user_agent: Option<String>,
+    #[serde(default)]
+    pub client_meta: Option<Value>,
 }
 
 pub fn hash_params(params: &Option<Value>) -> String {
@@ -80,6 +88,13 @@ impl Logger {
         )
         .context("initializing events schema")?;
 
+        // Backward-compatible column additions. SQLite has no ALTER TABLE ... ADD COLUMN
+        // IF NOT EXISTS, so we inspect pragma_table_info and add only what's missing.
+        add_column_if_missing(&db, "events", "transport", "TEXT")?;
+        add_column_if_missing(&db, "events", "remote_addr", "TEXT")?;
+        add_column_if_missing(&db, "events", "user_agent", "TEXT")?;
+        add_column_if_missing(&db, "events", "client_meta", "TEXT")?;
+
         let jsonl = match jsonl_path {
             Some(p) => {
                 if let Some(parent) = p.parent() {
@@ -112,18 +127,22 @@ impl Logger {
     }
 
     pub async fn record(&self, entry: &LogEntry) -> Result<()> {
-        // SQLite is synchronous — hold the lock only long enough to insert.
         {
             let db = self.inner.db.lock().await;
             let params_str = entry
                 .params
                 .as_ref()
                 .map(|v| serde_json::to_string(v).unwrap_or_default());
+            let client_meta_str = entry
+                .client_meta
+                .as_ref()
+                .map(|v| serde_json::to_string(v).unwrap_or_default());
             db.execute(
                 "INSERT INTO events
                     (timestamp_ms, session_id, method, params_hash, params,
-                     client_name, client_version, response_summary)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                     client_name, client_version, response_summary,
+                     transport, remote_addr, user_agent, client_meta)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     entry.timestamp_ms,
                     entry.session_id,
@@ -133,6 +152,10 @@ impl Logger {
                     entry.client_name,
                     entry.client_version,
                     entry.response_summary,
+                    entry.transport,
+                    entry.remote_addr,
+                    entry.user_agent,
+                    client_meta_str,
                 ],
             )
             .context("inserting event row")?;
@@ -153,6 +176,28 @@ impl Logger {
         let n: i64 = db.query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0))?;
         Ok(n)
     }
+}
+
+fn add_column_if_missing(
+    db: &Connection,
+    table: &str,
+    column: &str,
+    col_type: &str,
+) -> Result<()> {
+    let existing: Vec<String> = db
+        .prepare(&format!("PRAGMA table_info({table})"))?
+        .query_map([], |r| r.get::<_, String>(1))?
+        .filter_map(|r| r.ok())
+        .collect();
+    if existing.iter().any(|c| c == column) {
+        return Ok(());
+    }
+    db.execute(
+        &format!("ALTER TABLE {table} ADD COLUMN {column} {col_type}"),
+        [],
+    )
+    .with_context(|| format!("adding column {column} to {table}"))?;
+    Ok(())
 }
 
 pub fn now_ms() -> i64 {
@@ -184,6 +229,10 @@ mod tests {
             client_version: Some("1.0".into()),
             session_id: "sess-1".into(),
             response_summary: "rows=0".into(),
+            transport: Some("http".into()),
+            remote_addr: Some("203.0.113.7:54321".into()),
+            user_agent: Some("curl/8.0".into()),
+            client_meta: Some(serde_json::json!({"x_forwarded_for": "198.51.100.9"})),
         };
         logger.record(&entry).await.unwrap();
 
@@ -191,6 +240,59 @@ mod tests {
         let body = tokio::fs::read_to_string(&jsonl).await.unwrap();
         assert!(body.contains("\"method\":\"tools/call\""));
         assert!(body.contains("\"client_name\":\"attacker\""));
+        assert!(body.contains("\"transport\":\"http\""));
+        assert!(body.contains("\"remote_addr\":\"203.0.113.7:54321\""));
+    }
+
+    #[tokio::test]
+    async fn migrates_existing_db_in_place() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("legacy.db");
+
+        // Simulate an existing Day-1 schema that lacks the new columns.
+        {
+            let c = Connection::open(&db_path).unwrap();
+            c.execute_batch(
+                r#"
+                CREATE TABLE events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp_ms INTEGER NOT NULL,
+                    session_id TEXT NOT NULL,
+                    method TEXT NOT NULL,
+                    params_hash TEXT NOT NULL,
+                    params TEXT,
+                    client_name TEXT,
+                    client_version TEXT,
+                    response_summary TEXT NOT NULL
+                );
+                INSERT INTO events
+                    (timestamp_ms, session_id, method, params_hash, response_summary)
+                VALUES (1, 'old', 'initialize', 'h', 'ok');
+                "#,
+            )
+            .unwrap();
+        }
+
+        // Opening via Logger must add the new columns without losing the old row.
+        let logger = Logger::open(&db_path, None).await.unwrap();
+        assert_eq!(logger.count_events().await.unwrap(), 1);
+
+        let entry = LogEntry {
+            timestamp_ms: 2,
+            method: "tools/list".into(),
+            params_hash: "h2".into(),
+            params: None,
+            client_name: None,
+            client_version: None,
+            session_id: "new".into(),
+            response_summary: "ok".into(),
+            transport: Some("http".into()),
+            remote_addr: Some("127.0.0.1:1".into()),
+            user_agent: None,
+            client_meta: None,
+        };
+        logger.record(&entry).await.unwrap();
+        assert_eq!(logger.count_events().await.unwrap(), 2);
     }
 
     #[test]
