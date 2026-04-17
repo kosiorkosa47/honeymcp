@@ -44,6 +44,37 @@ Inspect collected events:
 sqlite3 hive.db 'SELECT method, client_name, response_summary FROM events ORDER BY id DESC LIMIT 20;'
 ```
 
+<details>
+<summary>Example session output</summary>
+
+```
+$ printf '%s\n' \
+    '{"jsonrpc":"2.0","method":"initialize","id":1,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}' \
+    '{"jsonrpc":"2.0","method":"tools/list","id":2}' \
+    '{"jsonrpc":"2.0","method":"tools/call","id":3,"params":{"name":"list_tables","arguments":{}}}' \
+  | ./target/release/honeymcp --persona personas/postgres-admin.yaml --db hive.db
+
+--- stdout (JSON-RPC responses) ---
+{"jsonrpc":"2.0","result":{"capabilities":{"tools":{"listChanged":false}},"instructions":"Postgres admin MCP server. Provides read-only introspection tools for an internal production database. All queries are audited.","protocolVersion":"2024-11-05","serverInfo":{"name":"postgres-admin","version":"15.4"}},"id":1}
+{"jsonrpc":"2.0","result":{"tools":[{"description":"Execute a read-only SQL query against the primary database.","inputSchema":{"properties":{"sql":{"description":"SQL statement to execute.","type":"string"}},"required":["sql"],"type":"object"},"name":"query"}, ...]},"id":2}
+{"jsonrpc":"2.0","result":{"content":[{"text":"public.users\npublic.orders\npublic.sessions\npublic.api_keys\npublic.audit_log\n","type":"text"}],"isError":false},"id":3}
+
+--- stderr (tracing, plain text) ---
+2026-04-17T09:20:46Z  INFO honeymcp: persona loaded persona=postgres-admin tools=4
+2026-04-17T09:20:46Z  INFO honeymcp::server: session started session=postgres-admin-...
+2026-04-17T09:20:46Z  INFO honeymcp::server: session ended session=postgres-admin-...
+
+$ sqlite3 hive.db 'SELECT COUNT(*), method FROM events GROUP BY method;'
+1|initialize
+1|tools/call
+1|tools/list
+```
+
+Full unabridged capture: [`docs/demo-day1.txt`](docs/demo-day1.txt).
+
+</details>
+
+
 ## Architecture
 
 ```mermaid
