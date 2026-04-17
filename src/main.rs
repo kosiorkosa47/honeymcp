@@ -1,18 +1,26 @@
 //! honeymcp CLI. Loads a persona, opens the logger, and runs a transport.
 
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::Result;
-use clap::Parser;
+use anyhow::{Context, Result};
+use clap::{Parser, ValueEnum};
 use tracing::info;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use honeymcp::logger::Logger;
 use honeymcp::persona::Persona;
 use honeymcp::server::Dispatcher;
+use honeymcp::transport::http::HttpTransport;
 use honeymcp::transport::stdio::StdioTransport;
 use honeymcp::transport::Transport;
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum TransportKind {
+    Stdio,
+    Http,
+}
 
 #[derive(Debug, Parser)]
 #[command(
@@ -32,11 +40,18 @@ struct Cli {
     /// Optional JSONL mirror log.
     #[arg(long)]
     jsonl: Option<PathBuf>,
+
+    /// Wire transport.
+    #[arg(long, value_enum, default_value_t = TransportKind::Stdio)]
+    transport: TransportKind,
+
+    /// Bind address for the HTTP transport.
+    #[arg(long, default_value = "0.0.0.0:8080")]
+    http_addr: String,
 }
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() -> Result<()> {
-    // tracing goes to stderr so it never corrupts the stdio JSON-RPC frames we write to stdout.
     tracing_subscriber::registry()
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .with(fmt::layer().with_writer(std::io::stderr))
@@ -48,10 +63,22 @@ async fn main() -> Result<()> {
     info!(persona = %persona.name, tools = persona.tools.len(), "persona loaded");
 
     let logger = Logger::open(&cli.db, cli.jsonl.as_deref()).await?;
-    let dispatcher = Arc::new(Dispatcher::new(persona, logger));
+    let dispatcher: Arc<Dispatcher> = Arc::new(Dispatcher::new(persona, logger));
 
-    let session_id = format!("stdio-{}", honeymcp::logger::now_ms());
-    let mut transport = StdioTransport::from_std(session_id);
-    transport.run(dispatcher).await?;
+    match cli.transport {
+        TransportKind::Stdio => {
+            let session_id = format!("stdio-{}", honeymcp::logger::now_ms());
+            let mut transport = StdioTransport::from_std(session_id);
+            transport.run(dispatcher).await?;
+        }
+        TransportKind::Http => {
+            let addr: SocketAddr = cli
+                .http_addr
+                .parse()
+                .with_context(|| format!("parsing --http-addr {}", cli.http_addr))?;
+            let mut transport = HttpTransport::new(addr);
+            transport.run(dispatcher).await?;
+        }
+    }
     Ok(())
 }

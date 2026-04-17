@@ -5,6 +5,7 @@
 //! is transport-agnostic, so adding a new wire protocol means implementing `Transport`
 //! without touching dispatch logic.
 
+pub mod http;
 pub mod stdio;
 
 use std::sync::Arc;
