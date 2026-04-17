@@ -1,8 +1,12 @@
 # honeymcp
 
+[![CI](https://github.com/kosiorkosa47/honeymcp/actions/workflows/ci.yml/badge.svg)](https://github.com/kosiorkosa47/honeymcp/actions)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
+
 > An open-source honeypot for the [Model Context Protocol](https://spec.modelcontextprotocol.io/) — impersonates a legitimate MCP server to collect threat intelligence on attacks against the MCP ecosystem.
 
-**Status:** Day 1 of 30 — building in public.
+**Status:** Day 2 of 30 — building in public.
 
 ## Why
 
@@ -11,11 +15,14 @@ MCP is a young protocol with a rapidly growing attack surface: **tool poisoning*
 ## What it does today
 
 - Speaks **JSON-RPC 2.0 over stdio** (the baseline MCP transport).
+- Speaks **HTTP + SSE** as well as stdio.
 - Handles `initialize`, `tools/list`, `tools/call`, and the common `notifications/*` frames.
 - Loads a **persona** from YAML — server name, version, instructions, and a list of fake tools with canned responses.
-- Logs every request/response to **SQLite** (primary, queryable) and optionally mirrors to **JSONL** (grep/jq-friendly), including timestamp, method, SHA-256 of params, raw params, client name/version, and a session id.
+- Ships **two personas** out of the box: `postgres-admin` and `github-admin`.
+- Ships as a **Docker image** for one-command deploy.
+- Logs every request/response to **SQLite** (primary, queryable) and optionally mirrors to **JSONL** (grep/jq-friendly), including timestamp, method, SHA-256 of params, raw params, client name/version, session id, transport, remote address, and User-Agent.
 
-HTTP/SSE transport, anomaly scoring, and live dashboards come in later days.
+Anomaly scoring and a live dashboard come in later days.
 
 ## Quickstart
 
