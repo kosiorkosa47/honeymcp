@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1] - 2026-04-17 (Day 3 evening)
+
+### Added
+- Bare-bones observability dashboard at `GET /dashboard` (also served from `/`).
+  Single-file vanilla JS + inline CSS, no framework, embedded via `include_str!`.
+  Polls `/stats` every 5 s and renders uptime, event counts, detections by
+  category, and top tools in a terminal-styled layout.
+
 ## [0.3.0] - 2026-04-17 (Day 3)
 
 ### Added

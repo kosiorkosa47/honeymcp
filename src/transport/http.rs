@@ -121,6 +121,8 @@ impl Transport for HttpTransport {
             .route("/sse", get(sse_handler))
             .route("/message", post(message_handler))
             .route("/stats", get(stats_handler))
+            .route("/dashboard", get(dashboard_handler))
+            .route("/", get(dashboard_handler))
             .route("/healthz", get(|| async { "ok" }))
             .layer(cors)
             .with_state(state);
@@ -137,6 +139,20 @@ impl Transport for HttpTransport {
         .context("axum serve failed")?;
         Ok(())
     }
+}
+
+/// Embedded static dashboard. Single-file vanilla JS polls `/stats` every 5 s and
+/// renders a small terminal-styled summary page. No build step, no framework, just
+/// a `<script>` block; kept inline so it ships baked into the binary.
+const DASHBOARD_HTML: &str = include_str!("../dashboard.html");
+
+async fn dashboard_handler() -> Response {
+    (
+        StatusCode::OK,
+        [("content-type", "text/html; charset=utf-8")],
+        DASHBOARD_HTML,
+    )
+        .into_response()
 }
 
 async fn stats_handler(State(state): State<AppState>) -> Response {

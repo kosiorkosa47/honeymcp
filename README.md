@@ -6,7 +6,9 @@
 
 > An open-source honeypot for the [Model Context Protocol](https://spec.modelcontextprotocol.io/) — impersonates a legitimate MCP server to collect threat intelligence on attacks against the MCP ecosystem.
 
-**Status:** Day 2 of 30 — building in public.
+**Status:** Day 3 of 30 - building in public.
+
+**Live:** [honeypot dashboard](http://54.169.235.208:8080/dashboard) (Singapore, Lightsail).
 
 ## Why
 
