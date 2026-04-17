@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# pre-commit hook: format + clippy gates before any commit lands.
+#
+# To install (one-time, per clone):
+#     git config core.hooksPath .github/hooks
+#
+# Reason we ship the hook under .github/hooks and require an opt-in config:
+# git does not follow symlinks or remote-tracked hooks by default, so the
+# only safe way to version-control a hook is to keep it in the repo and let
+# each dev point their hooks path at it.
+
+set -euo pipefail
+
+echo "==> cargo fmt --check"
+cargo fmt --all -- --check
+
+echo "==> cargo clippy --all-targets --all-features -- -D warnings"
+cargo clippy --all-targets --all-features -- -D warnings

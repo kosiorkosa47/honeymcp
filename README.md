@@ -127,6 +127,22 @@ tools:
 
 The persona is the only knob you need to turn to impersonate a new service.
 
+## Development
+
+Clone, then enable the versioned pre-commit hook (runs `cargo fmt --check` + `cargo clippy -D warnings` before every commit):
+
+```bash
+git config core.hooksPath .github/hooks
+```
+
+Toolchain: Rust 1.88+ (edition 2024 dependencies).
+
+```bash
+cargo test                    # run the suite (unit + integration)
+cargo fmt --all               # format
+cargo clippy --all-targets -- -D warnings
+```
+
 ## Prior art & why honeymcp
 
 Adjacent work exists but targets different layers:
