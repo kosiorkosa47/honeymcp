@@ -12,8 +12,9 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::Value;
 use tokio::sync::Mutex;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
+use crate::detect::{DetectionContext, Registry, SessionStats};
 use crate::logger::{hash_params, now_ms, LogEntry, Logger};
 use crate::persona::Persona;
 use crate::protocol::{
@@ -27,19 +28,26 @@ use crate::transport::{Handler, RequestContext};
 pub struct SessionState {
     pub client_name: Option<String>,
     pub client_version: Option<String>,
+    pub stats: SessionStats,
 }
 
 pub struct Dispatcher {
     persona: Arc<Persona>,
     logger: Logger,
+    registry: Arc<Registry>,
     sessions: Mutex<HashMap<String, Arc<Mutex<SessionState>>>>,
 }
 
 impl Dispatcher {
     pub fn new(persona: Persona, logger: Logger) -> Self {
+        Self::with_registry(persona, logger, Registry::default_enabled())
+    }
+
+    pub fn with_registry(persona: Persona, logger: Logger, registry: Registry) -> Self {
         Self {
             persona: Arc::new(persona),
             logger,
+            registry: Arc::new(registry),
             sessions: Mutex::new(HashMap::new()),
         }
     }
@@ -171,8 +179,9 @@ impl Dispatcher {
         ctx: &RequestContext,
         state: &SessionState,
     ) {
+        let ts = now_ms();
         let entry = LogEntry {
-            timestamp_ms: now_ms(),
+            timestamp_ms: ts,
             method: req.method.clone(),
             params_hash: hash_params(&req.params),
             params: req.params.clone(),
@@ -185,10 +194,37 @@ impl Dispatcher {
             user_agent: ctx.user_agent.clone(),
             client_meta: ctx.client_meta.clone(),
         };
-        if let Err(e) = self.logger.record(&entry).await {
-            warn!(error = %e, "failed to persist log entry");
-        } else {
-            debug!(method = %req.method, transport = %ctx.transport, "logged event");
+
+        let event_id = match self.logger.record(&entry).await {
+            Ok(id) => Some(id),
+            Err(e) => {
+                warn!(error = %e, "failed to persist log entry");
+                None
+            }
+        };
+        debug!(method = %req.method, transport = %ctx.transport, "logged event");
+
+        if let Some(event_id) = event_id {
+            if !self.registry.is_empty() {
+                let detections = self.registry.analyze_all(&DetectionContext {
+                    entry: &entry,
+                    stats: &state.stats,
+                });
+                if !detections.is_empty() {
+                    info!(
+                        count = detections.len(),
+                        method = %req.method,
+                        "threat detections fired"
+                    );
+                    if let Err(e) = self
+                        .logger
+                        .record_detections(event_id, ts, &detections)
+                        .await
+                    {
+                        warn!(error = %e, "failed to persist detections");
+                    }
+                }
+            }
         }
     }
 }
@@ -202,6 +238,18 @@ impl Handler for Dispatcher {
     ) -> Option<JsonRpcResponse> {
         let state_lock = self.session_state(&ctx.session_id).await;
         let mut state = state_lock.lock().await;
+
+        // Update per-session stats before dispatch so detectors see the current count.
+        state.stats.calls_in_session = state.stats.calls_in_session.saturating_add(1);
+        match req.method.as_str() {
+            "tools/list" => {
+                state.stats.tools_list_count = state.stats.tools_list_count.saturating_add(1)
+            }
+            "tools/call" => {
+                state.stats.tools_call_count = state.stats.tools_call_count.saturating_add(1)
+            }
+            _ => {}
+        }
 
         let (summary, response) = match req.method.as_str() {
             "initialize" => self.on_initialize(&req, &mut state),

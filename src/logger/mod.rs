@@ -14,6 +14,8 @@ use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
+use crate::detect::Detection;
+
 /// A single request/response interaction that we persist for later analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogEntry {
@@ -84,9 +86,23 @@ impl Logger {
             CREATE INDEX IF NOT EXISTS idx_events_method    ON events(method);
             CREATE INDEX IF NOT EXISTS idx_events_session   ON events(session_id);
             CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp_ms);
+
+            CREATE TABLE IF NOT EXISTS detections (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id      INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+                timestamp_ms  INTEGER NOT NULL,
+                detector      TEXT    NOT NULL,
+                severity      TEXT    NOT NULL,
+                category      TEXT    NOT NULL,
+                evidence      TEXT    NOT NULL,
+                notes         TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_detections_event    ON detections(event_id);
+            CREATE INDEX IF NOT EXISTS idx_detections_category ON detections(category);
+            CREATE INDEX IF NOT EXISTS idx_detections_severity ON detections(severity);
             "#,
         )
-        .context("initializing events schema")?;
+        .context("initializing events + detections schema")?;
 
         // Backward-compatible column additions. SQLite has no ALTER TABLE ... ADD COLUMN
         // IF NOT EXISTS, so we inspect pragma_table_info and add only what's missing.
@@ -126,8 +142,9 @@ impl Logger {
         self.inner.jsonl_path.as_deref()
     }
 
-    pub async fn record(&self, entry: &LogEntry) -> Result<()> {
-        {
+    /// Insert the event and return its row id so callers can attach related detections.
+    pub async fn record(&self, entry: &LogEntry) -> Result<i64> {
+        let event_id = {
             let db = self.inner.db.lock().await;
             let params_str = entry
                 .params
@@ -159,7 +176,8 @@ impl Logger {
                 ],
             )
             .context("inserting event row")?;
-        }
+            db.last_insert_rowid()
+        };
 
         let mut jsonl = self.inner.jsonl.lock().await;
         if let Some(f) = jsonl.as_mut() {
@@ -168,7 +186,44 @@ impl Logger {
             f.write_all(&line).await.context("appending to jsonl")?;
             f.flush().await.ok();
         }
+        Ok(event_id)
+    }
+
+    pub async fn record_detections(
+        &self,
+        event_id: i64,
+        timestamp_ms: i64,
+        detections: &[Detection],
+    ) -> Result<()> {
+        if detections.is_empty() {
+            return Ok(());
+        }
+        let db = self.inner.db.lock().await;
+        let mut stmt = db
+            .prepare_cached(
+                "INSERT INTO detections (event_id, timestamp_ms, detector, severity, category, evidence, notes)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            )
+            .context("preparing detection insert")?;
+        for d in detections {
+            stmt.execute(params![
+                event_id,
+                timestamp_ms,
+                d.detector,
+                d.severity.as_str(),
+                d.category.as_str(),
+                d.evidence,
+                d.notes,
+            ])
+            .context("inserting detection row")?;
+        }
         Ok(())
+    }
+
+    pub async fn count_detections(&self) -> Result<i64> {
+        let db = self.inner.db.lock().await;
+        let n: i64 = db.query_row("SELECT COUNT(*) FROM detections", [], |r| r.get(0))?;
+        Ok(n)
     }
 
     pub async fn count_events(&self) -> Result<i64> {

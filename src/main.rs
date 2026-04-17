@@ -9,6 +9,7 @@ use clap::{Parser, ValueEnum};
 use tracing::info;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
+use honeymcp::detect::Registry;
 use honeymcp::logger::Logger;
 use honeymcp::persona::Persona;
 use honeymcp::server::Dispatcher;
@@ -48,6 +49,11 @@ struct Cli {
     /// Bind address for the HTTP transport.
     #[arg(long, default_value = "0.0.0.0:8080")]
     http_addr: String,
+
+    /// Skip threat-detection heuristics. Useful for pure-capture mode where you want
+    /// raw events without any post-processing.
+    #[arg(long)]
+    disable_detectors: bool,
 }
 
 #[tokio::main]
@@ -63,7 +69,14 @@ async fn main() -> Result<()> {
     info!(persona = %persona.name, tools = persona.tools.len(), "persona loaded");
 
     let logger = Logger::open(&cli.db, cli.jsonl.as_deref()).await?;
-    let dispatcher: Arc<Dispatcher> = Arc::new(Dispatcher::new(persona, logger));
+    let registry = if cli.disable_detectors {
+        Registry::disabled()
+    } else {
+        Registry::default_enabled()
+    };
+    info!(detectors = registry.len(), "detection registry loaded");
+    let dispatcher: Arc<Dispatcher> =
+        Arc::new(Dispatcher::with_registry(persona, logger, registry));
 
     match cli.transport {
         TransportKind::Stdio => {
