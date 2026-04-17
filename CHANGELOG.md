@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.3.3] - 2026-04-17 (Day 3 late night)
+
+### Security hardening pass
+
+- **Per-IP rate limit on `/message`**: token bucket via `tower_governor`, 2 req/s
+  sustained with a 20-request burst. Other endpoints (`/sse`, `/stats`,
+  `/dashboard`, `/healthz`) remain unthrottled so observability stays responsive
+  during a flood against the ingest path.
+- **Request body cap**: 256 KiB on `/message`. Larger payloads are rejected
+  before they touch the JSON parser.
+- **ReDoS guard**: every quantifier in `secret_exfil` and `shell_injection`
+  regexes now has an upper bound. No open-ended `{N,}` or `*` that touches
+  attacker input remains.
+- **Container hardening** (docker-compose.yml): `mem_limit=256m`, `cpus=0.5`,
+  `pids_limit=256`, `cap_drop: ALL`, `security_opt: no-new-privileges`,
+  `read_only: true` rootfs with `/tmp` as 32 MB tmpfs. Log rotation 3x10 MB.
+- **Dockerfile HEALTHCHECK** script that curls `/healthz` every 30 s.
+- **SQLite ring-buffer**: events table is capped at 1,000,000 rows; when the
+  limit is crossed we drop the oldest 100,000 rows in a single batched delete
+  (detections cascade). Opportunistic trim every 1,000 inserts.
+- **Params truncation**: payload values over 64 KiB are stored as a truncation
+  marker with only a 2 KB prefix, preventing a single crafted request from
+  writing tens of megabytes into the DB.
+- **cargo-audit** now runs on every push/PR in CI via `rustsec/audit-check@v2`.
+
 ## [0.3.2] - 2026-04-17 (Day 3 night)
 
 ### Added

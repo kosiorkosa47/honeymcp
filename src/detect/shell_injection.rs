@@ -18,18 +18,20 @@ fn pattern() -> &'static Regex {
         Regex::new(
             r#"(?x)
             (
-                # classic shell-escape constructs
-                \$\(                                 # $(...)
-              | `[^`]*`                              # backticks
-              | ;\s*(rm|curl|wget|bash|sh|nc|cat)    # ; rm, ; curl, ...
-              | \|\s*(sh|bash|zsh|curl|wget|nc)      # pipe-into-shell
-              | \&\&\s*(rm|curl|wget|bash|sh)        # && chained
-              | \|\|\s*(rm|curl|wget|bash|sh)        # || chained
-              | >\s*/tmp/                            # redirect to /tmp
-              | \bcurl\b[^\n]{0,60}\|\s*(sh|bash)    # curl ... | sh
-              | \bnc\s+-\w*e                         # nc -e shell
-              | \bchmod\s+\+x\b                      # chmod +x
-              | \beval\(                             # eval()
+                # classic shell-escape constructs. All quantifiers are bounded
+                # to protect against regex-engine pathological backtracking on
+                # attacker-supplied input.
+                \$\(                                       # $(...)
+              | `[^`]{0,200}`                              # backticks, capped
+              | ;\s{0,4}(rm|curl|wget|bash|sh|nc|cat)      # ; rm, ; curl, ...
+              | \|\s{0,4}(sh|bash|zsh|curl|wget|nc)        # pipe-into-shell
+              | \&\&\s{0,4}(rm|curl|wget|bash|sh)          # && chained
+              | \|\|\s{0,4}(rm|curl|wget|bash|sh)          # || chained
+              | >\s{0,4}/tmp/                              # redirect to /tmp
+              | \bcurl\b[^\n]{0,60}\|\s{0,4}(sh|bash)      # curl ... | sh
+              | \bnc\s{1,4}-\w{1,8}e                       # nc -e shell
+              | \bchmod\s{1,4}\+x\b                        # chmod +x
+              | \beval\(                                   # eval()
             )
             "#,
         )

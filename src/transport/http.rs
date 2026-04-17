@@ -117,9 +117,38 @@ impl Transport for HttpTransport {
             .allow_methods(tower_http::cors::Any)
             .allow_headers(tower_http::cors::Any);
 
-        let app = Router::new()
-            .route("/sse", get(sse_handler))
+        // Per-IP token bucket on /message: ~2 req/s sustained with a 20-request
+        // burst. This is generous enough for any legitimate MCP client (bursts
+        // during handshake) and hostile enough to blunt a single-source flood.
+        let governor_conf = std::sync::Arc::new(
+            tower_governor::governor::GovernorConfigBuilder::default()
+                .per_second(2)
+                .burst_size(20)
+                .finish()
+                .expect("valid governor config"),
+        );
+        let governor_layer = tower_governor::GovernorLayer {
+            config: governor_conf,
+        };
+
+        // Global request-body cap: 256 KiB. An MCP JSON-RPC message that needs
+        // more than that is almost certainly an attempt to exhaust memory.
+        let body_limit = tower_http::limit::RequestBodyLimitLayer::new(256 * 1024);
+
+        // /message is the only endpoint that accepts attacker-controlled input
+        // large enough to matter, so rate limiting + body cap land there. /sse,
+        // /stats, /dashboard, /healthz are cheap and widely probed; letting
+        // those through unthrottled keeps the dashboard responsive during a
+        // flood against /message.
+        let message_routes = Router::new()
             .route("/message", post(message_handler))
+            .layer(governor_layer)
+            .layer(body_limit)
+            .with_state(state.clone());
+
+        let app = Router::new()
+            .merge(message_routes)
+            .route("/sse", get(sse_handler))
             .route("/stats", get(stats_handler))
             .route("/dashboard", get(dashboard_handler))
             .route("/", get(dashboard_handler))

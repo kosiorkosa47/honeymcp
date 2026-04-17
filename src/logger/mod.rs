@@ -55,6 +55,19 @@ pub struct Logger {
     inner: Arc<LoggerInner>,
 }
 
+/// Hard upper bound on the events table. When we exceed it, the oldest 10%
+/// of events are dropped (and their detections cascade via ON DELETE CASCADE).
+/// This prevents a disk-fill denial-of-service against a cheap VPS at the cost
+/// of eventually losing the earliest captures. For threat-intel use, recent is
+/// more valuable than complete, so the tradeoff is deliberate.
+const MAX_EVENTS: i64 = 1_000_000;
+const EVENTS_TRIM_BATCH: i64 = 100_000;
+
+/// Cap on a single params payload. Values longer than this are truncated on
+/// insert. A legitimate MCP tool call carries at most a few KB of arguments;
+/// anything larger is an attacker trying to blow up the database.
+const MAX_PARAMS_BYTES: usize = 64 * 1024;
+
 struct LoggerInner {
     db: Mutex<Connection>,
     jsonl: Mutex<Option<tokio::fs::File>>,
@@ -146,10 +159,21 @@ impl Logger {
     pub async fn record(&self, entry: &LogEntry) -> Result<i64> {
         let event_id = {
             let db = self.inner.db.lock().await;
-            let params_str = entry
-                .params
-                .as_ref()
-                .map(|v| serde_json::to_string(v).unwrap_or_default());
+            let params_str = entry.params.as_ref().map(|v| {
+                let s = serde_json::to_string(v).unwrap_or_default();
+                if s.len() > MAX_PARAMS_BYTES {
+                    // Preserve a marker so downstream analysis knows why the
+                    // payload is short. SQLite storage + future tail queries
+                    // both stay bounded.
+                    format!(
+                        "{{\"_truncated\":true,\"_original_bytes\":{}, \"_prefix\":{}}}",
+                        s.len(),
+                        serde_json::Value::String(s.chars().take(2048).collect::<String>())
+                    )
+                } else {
+                    s
+                }
+            });
             let client_meta_str = entry
                 .client_meta
                 .as_ref()
@@ -176,7 +200,26 @@ impl Logger {
                 ],
             )
             .context("inserting event row")?;
-            db.last_insert_rowid()
+            let id = db.last_insert_rowid();
+
+            // Opportunistic ring-buffer: every 1,000 inserts, check total size
+            // and trim the oldest batch if we're past MAX_EVENTS. Keeps the DB
+            // bounded without running on every single insert.
+            if id % 1000 == 0 {
+                if let Ok(count) =
+                    db.query_row::<i64, _, _>("SELECT COUNT(*) FROM events", [], |r| r.get(0))
+                {
+                    if count > MAX_EVENTS {
+                        let _ = db.execute(
+                            "DELETE FROM events WHERE id IN (
+                                 SELECT id FROM events ORDER BY id ASC LIMIT ?1
+                             )",
+                            params![EVENTS_TRIM_BATCH],
+                        );
+                    }
+                }
+            }
+            id
         };
 
         let mut jsonl = self.inner.jsonl.lock().await;

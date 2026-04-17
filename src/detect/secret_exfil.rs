@@ -31,12 +31,12 @@ fn pattern() -> &'static Regex {
               | \.aws/credentials\b
               | \.aws/config\b
               | access[_-]?token\b
-              | bearer\s+[a-z0-9\-_.]{10,}
-              | gh[pousr]_[a-z0-9]{20,}           # GitHub token formats
-              | sk-[a-z0-9]{20,}                   # OpenAI-style key
-              | sk-ant-[a-z0-9\-_]{20,}            # Anthropic key prefix
-              | glpat-[a-z0-9_-]{20,}              # GitLab PAT
-              | xox[baprs]-[a-z0-9-]{10,}          # Slack token
+              | bearer\s{1,4}[a-z0-9\-_.]{10,256}
+              | gh[pousr]_[a-z0-9]{20,80}         # GitHub token formats
+              | sk-[a-z0-9]{20,80}                 # OpenAI-style key
+              | sk-ant-[a-z0-9\-_]{20,120}         # Anthropic key prefix
+              | glpat-[a-z0-9_-]{20,80}            # GitLab PAT
+              | xox[baprs]-[a-z0-9-]{10,80}        # Slack token
               | AKIA[0-9A-Z]{16}                   # AWS access key id format
               | ASIA[0-9A-Z]{16}                   # AWS STS
               | /etc/passwd\b
@@ -53,7 +53,7 @@ fn pattern() -> &'static Regex {
               | \.dockercfg\b
               | credentials\.json\b
               | service[-_]?account\.json\b
-              | -----BEGIN\s+(?:RSA|OPENSSH|EC|DSA|PRIVATE)[\s\w]*PRIVATE\s+KEY-----
+              | -----BEGIN\s{1,4}(?:RSA|OPENSSH|EC|DSA|PRIVATE)[\s\w]{0,40}PRIVATE\s{1,4}KEY-----
             )
             ",
         )

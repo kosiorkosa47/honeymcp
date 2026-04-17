@@ -1,8 +1,29 @@
 services:
   honeymcp:
-    build: .
+    image: honeymcp:0.3.3
+
     container_name: honeymcp
     restart: unless-stopped
+    # Resource caps - a honeypot should never be the reason the host falls over.
+    # A crafted payload that tries to OOM the container or spin the CPU just hits
+    # the wall and moves on; the host keeps running.
+    mem_limit: 256m
+    mem_reservation: 128m
+    cpus: 0.5
+    pids_limit: 256
+    # Drop every Linux capability; honeymcp only needs to read its persona file,
+    # write to /var/lib/honeymcp, and bind a TCP socket (which is already handled
+    # by Docker's port publish, not the container process).
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Root filesystem read-only. Writable state lives on the explicitly mounted
+    # volumes below. Crash-loops from attacker input can't persist anything
+    # outside the DB.
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
     ports:
       - "8080:8080"
     volumes:
@@ -10,3 +31,14 @@ services:
       - ./personas:/opt/honeymcp/personas:ro
     environment:
       - RUST_LOG=info,honeymcp=debug
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

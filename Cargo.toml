@@ -1,6 +1,6 @@
 [package]
 name = "honeymcp"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2021"
 rust-version = "1.88"
 description = "Open-source MCP (Model Context Protocol) honeypot for collecting threat intelligence"
@@ -27,7 +27,8 @@ hex = "0.4"
 time = { version = "0.3", features = ["formatting", "macros", "serde"] }
 axum = "0.7"
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "limit"] }
+tower_governor = "0.4"
 async-stream = "0.3"
 futures = "0.3"
 regex = "1"
