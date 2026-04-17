@@ -1,0 +1,12 @@
+services:
+  honeymcp:
+    build: .
+    container_name: honeymcp
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/var/lib/honeymcp
+      - ./personas:/opt/honeymcp/personas:ro
+    environment:
+      - RUST_LOG=info,honeymcp=debug
