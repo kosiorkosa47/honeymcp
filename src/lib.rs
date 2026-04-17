@@ -1,4 +1,4 @@
-//! honeymcp — an MCP honeypot. See the `README` for rationale.
+//! honeycomb — an MCP honeypot. See the `README` for rationale.
 
 pub mod logger;
 pub mod persona;

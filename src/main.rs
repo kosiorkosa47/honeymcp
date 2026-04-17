@@ -1,4 +1,4 @@
-//! honeymcp CLI. Loads a persona, opens the logger, and runs a session over stdio.
+//! honeycomb CLI. Loads a persona, opens the logger, and runs a session over stdio.
 
 use std::path::PathBuf;
 
@@ -7,14 +7,14 @@ use clap::Parser;
 use tracing::info;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-use honeymcp::logger::Logger;
-use honeymcp::persona::Persona;
-use honeymcp::server::Session;
-use honeymcp::transport::stdio::StdioTransport;
+use honeycomb::logger::Logger;
+use honeycomb::persona::Persona;
+use honeycomb::server::Session;
+use honeycomb::transport::stdio::StdioTransport;
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "honeymcp",
+    name = "honeycomb",
     version,
     about = "An MCP honeypot that collects threat intelligence from attackers."
 )]
@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
     let logger = Logger::open(&cli.db, cli.jsonl.as_deref()).await?;
 
     let mut transport = StdioTransport::from_std();
-    let session_id = format!("{}-{}", persona.name, honeymcp::logger::now_ms());
+    let session_id = format!("{}-{}", persona.name, honeycomb::logger::now_ms());
     let mut session = Session::new(session_id, persona, logger);
     session.run(&mut transport).await?;
     Ok(())
