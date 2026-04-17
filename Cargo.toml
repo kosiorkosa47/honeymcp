@@ -11,7 +11,7 @@ keywords = ["mcp", "honeypot", "security", "threat-intelligence"]
 categories = ["command-line-utilities", "network-programming"]
 
 [dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "io-util", "sync"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "io-util", "sync", "fs"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
@@ -28,7 +28,7 @@ time = { version = "0.3", features = ["formatting", "macros", "serde"] }
 
 [dev-dependencies]
 tempfile = "3"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "io-util", "sync", "test-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "io-util", "sync", "fs", "test-util"] }
 
 [profile.release]
 lto = "thin"
