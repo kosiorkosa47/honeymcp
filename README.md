@@ -87,6 +87,16 @@ tools:
 
 The persona is the only knob you need to turn to impersonate a new service.
 
+## Prior art & why honeycomb
+
+Adjacent work exists but targets different layers:
+
+- **MCP gateways** (MintMCP, Aembit) — protective proxies for legitimate deployments, not deception.
+- **Prompt-injection classifiers** (StackOne Defender, Augustus, CloneGuard) — detect payloads, don't generate attack telemetry.
+- **Agent red-team tools** (DeepTeam, Garak) — offensive side, not passive collection.
+
+honeycomb fills a gap: passive intel collection on what attackers actually send to MCP servers in the wild, with server-shape accurate enough to sustain multi-turn interaction. Maps to OWASP Top 10 for Agentic Applications 2026 — **ASI04 (Agentic Supply Chain Vulnerabilities)**.
+
 ## Roadmap
 
 - Day 2-7: HTTP/SSE transport, multi-session logging, prompt-injection detection heuristics
