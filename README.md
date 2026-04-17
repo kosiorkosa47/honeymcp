@@ -1,4 +1,4 @@
-# honeycomb
+# honeymcp
 
 > An open-source honeypot for the [Model Context Protocol](https://spec.modelcontextprotocol.io/) — impersonates a legitimate MCP server to collect threat intelligence on attacks against the MCP ecosystem.
 
@@ -6,7 +6,7 @@
 
 ## Why
 
-MCP is a young protocol with a rapidly growing attack surface: **tool poisoning**, **prompt injection** carried through tool descriptions and results, **command execution** bugs in servers (e.g. `CVE-2025-59536`), and **data exfiltration** through tool calls into LLM context. There is no good public corpus of what attackers are actually doing against real MCP servers. `honeycomb` aims to be a drop-in honeypot that produces that data.
+MCP is a young protocol with a rapidly growing attack surface: **tool poisoning**, **prompt injection** carried through tool descriptions and results, **command execution** bugs in servers (e.g. `CVE-2025-59536`), and **data exfiltration** through tool calls into LLM context. There is no good public corpus of what attackers are actually doing against real MCP servers. `honeymcp` aims to be a drop-in honeypot that produces that data.
 
 ## What it does today
 
@@ -22,7 +22,7 @@ HTTP/SSE transport, anomaly scoring, and live dashboards come in later days.
 ```bash
 cargo build --release
 
-./target/release/honeycomb \
+./target/release/honeymcp \
     --persona personas/postgres-admin.yaml \
     --db hive.db \
     --jsonl hive.jsonl
@@ -35,7 +35,7 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","method":"initialize","id":1,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}' \
   '{"jsonrpc":"2.0","method":"tools/list","id":2}' \
   '{"jsonrpc":"2.0","method":"tools/call","id":3,"params":{"name":"list_tables","arguments":{}}}' \
-  | ./target/release/honeycomb --persona personas/postgres-admin.yaml --db hive.db
+  | ./target/release/honeymcp --persona personas/postgres-admin.yaml --db hive.db
 ```
 
 Inspect collected events:
@@ -87,7 +87,7 @@ tools:
 
 The persona is the only knob you need to turn to impersonate a new service.
 
-## Prior art & why honeycomb
+## Prior art & why honeymcp
 
 Adjacent work exists but targets different layers:
 
@@ -95,7 +95,7 @@ Adjacent work exists but targets different layers:
 - **Prompt-injection classifiers** (StackOne Defender, Augustus, CloneGuard) — detect payloads, don't generate attack telemetry.
 - **Agent red-team tools** (DeepTeam, Garak) — offensive side, not passive collection.
 
-honeycomb fills a gap: passive intel collection on what attackers actually send to MCP servers in the wild, with server-shape accurate enough to sustain multi-turn interaction. Maps to OWASP Top 10 for Agentic Applications 2026 — **ASI04 (Agentic Supply Chain Vulnerabilities)**.
+honeymcp fills a gap: passive intel collection on what attackers actually send to MCP servers in the wild, with server-shape accurate enough to sustain multi-turn interaction. Maps to OWASP Top 10 for Agentic Applications 2026 — **ASI04 (Agentic Supply Chain Vulnerabilities)**.
 
 ## Roadmap
 

@@ -125,7 +125,7 @@ mod tests {
                 ..Default::default()
             },
             server_info: ServerInfo {
-                name: "honeycomb".into(),
+                name: "honeymcp".into(),
                 version: "0.1.0".into(),
             },
             instructions: None,
