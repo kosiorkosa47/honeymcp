@@ -5,4 +5,5 @@ pub mod logger;
 pub mod persona;
 pub mod protocol;
 pub mod server;
+pub mod stats;
 pub mod transport;

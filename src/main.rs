@@ -13,6 +13,7 @@ use honeymcp::detect::Registry;
 use honeymcp::logger::Logger;
 use honeymcp::persona::Persona;
 use honeymcp::server::Dispatcher;
+use honeymcp::stats::LoggerStatsProvider;
 use honeymcp::transport::http::HttpTransport;
 use honeymcp::transport::stdio::StdioTransport;
 use honeymcp::transport::Transport;
@@ -89,7 +90,13 @@ async fn main() -> Result<()> {
                 .http_addr
                 .parse()
                 .with_context(|| format!("parsing --http-addr {}", cli.http_addr))?;
-            let mut transport = HttpTransport::new(addr);
+            let stats = LoggerStatsProvider::new(
+                dispatcher.logger().clone(),
+                dispatcher.persona().name.clone(),
+                dispatcher.persona().version.clone(),
+            )
+            .into_arc();
+            let mut transport = HttpTransport::new(addr).with_stats(stats);
             transport.run(dispatcher).await?;
         }
     }

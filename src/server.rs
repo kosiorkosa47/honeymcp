@@ -56,6 +56,10 @@ impl Dispatcher {
         &self.persona
     }
 
+    pub fn logger(&self) -> &Logger {
+        &self.logger
+    }
+
     async fn session_state(&self, id: &str) -> Arc<Mutex<SessionState>> {
         let mut sessions = self.sessions.lock().await;
         sessions

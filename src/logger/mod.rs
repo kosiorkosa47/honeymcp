@@ -231,6 +231,58 @@ impl Logger {
         let n: i64 = db.query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0))?;
         Ok(n)
     }
+
+    pub async fn events_by_method(&self) -> Result<Vec<(String, i64)>> {
+        let db = self.inner.db.lock().await;
+        let mut stmt =
+            db.prepare("SELECT method, COUNT(*) FROM events GROUP BY method ORDER BY 2 DESC")?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    pub async fn unique_remote_addrs_since(&self, since_ms: i64) -> Result<i64> {
+        let db = self.inner.db.lock().await;
+        let n: i64 = db.query_row(
+            "SELECT COUNT(DISTINCT remote_addr) FROM events
+             WHERE remote_addr IS NOT NULL AND timestamp_ms >= ?1",
+            params![since_ms],
+            |r| r.get(0),
+        )?;
+        Ok(n)
+    }
+
+    pub async fn detections_by_category(&self) -> Result<Vec<(String, i64)>> {
+        let db = self.inner.db.lock().await;
+        let mut stmt = db.prepare(
+            "SELECT category, COUNT(*) FROM detections GROUP BY category ORDER BY 2 DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// Top N tool names called via `tools/call`, derived by extracting
+    /// `params.name` from the stored JSON.
+    pub async fn top_tools(&self, limit: i64) -> Result<Vec<(String, i64)>> {
+        let db = self.inner.db.lock().await;
+        let mut stmt = db.prepare(
+            "SELECT json_extract(params, '$.name') AS tool, COUNT(*) AS n
+             FROM events WHERE method = 'tools/call' AND tool IS NOT NULL
+             GROUP BY tool ORDER BY n DESC LIMIT ?1",
+        )?;
+        let rows = stmt
+            .query_map(params![limit], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
 }
 
 fn add_column_if_missing(db: &Connection, table: &str, column: &str, col_type: &str) -> Result<()> {

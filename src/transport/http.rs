@@ -38,21 +38,29 @@ use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, info, warn};
 
 use crate::protocol::JsonRpcRequest;
+use crate::stats::StatsProvider;
 use crate::transport::{Handler, RequestContext, Transport};
 
 pub struct HttpTransport {
     addr: SocketAddr,
+    stats: Option<Arc<dyn StatsProvider>>,
 }
 
 impl HttpTransport {
     pub fn new(addr: SocketAddr) -> Self {
-        Self { addr }
+        Self { addr, stats: None }
+    }
+
+    pub fn with_stats(mut self, stats: Arc<dyn StatsProvider>) -> Self {
+        self.stats = Some(stats);
+        self
     }
 }
 
 #[derive(Clone)]
 struct AppState {
     handler: Arc<dyn Handler>,
+    stats: Option<Arc<dyn StatsProvider>>,
     sessions: Arc<RwLock<HashMap<String, mpsc::UnboundedSender<String>>>>,
 }
 
@@ -100,6 +108,7 @@ impl Transport for HttpTransport {
     async fn run(&mut self, handler: Arc<dyn Handler>) -> Result<()> {
         let state = AppState {
             handler,
+            stats: self.stats.clone(),
             sessions: Arc::new(RwLock::new(HashMap::new())),
         };
 
@@ -111,6 +120,7 @@ impl Transport for HttpTransport {
         let app = Router::new()
             .route("/sse", get(sse_handler))
             .route("/message", post(message_handler))
+            .route("/stats", get(stats_handler))
             .route("/healthz", get(|| async { "ok" }))
             .layer(cors)
             .with_state(state);
@@ -126,6 +136,27 @@ impl Transport for HttpTransport {
         .await
         .context("axum serve failed")?;
         Ok(())
+    }
+}
+
+async fn stats_handler(State(state): State<AppState>) -> Response {
+    match state.stats {
+        Some(provider) => match provider.stats().await {
+            Ok(snap) => (StatusCode::OK, Json(snap)).into_response(),
+            Err(e) => {
+                warn!(error = %e, "stats query failed");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": format!("stats: {e}")})),
+                )
+                    .into_response()
+            }
+        },
+        None => (
+            StatusCode::NOT_IMPLEMENTED,
+            Json(json!({"error": "stats provider not configured"})),
+        )
+            .into_response(),
     }
 }
 
@@ -249,6 +280,7 @@ mod tests {
         });
         let state = AppState {
             handler: handler.clone(),
+            stats: None,
             sessions: Arc::new(RwLock::new(HashMap::new())),
         };
 
