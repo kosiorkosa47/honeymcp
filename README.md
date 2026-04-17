@@ -126,7 +126,7 @@ Adjacent work exists but targets different layers:
 - **Prompt-injection classifiers** (StackOne Defender, Augustus, CloneGuard) — detect payloads, don't generate attack telemetry.
 - **Agent red-team tools** (DeepTeam, Garak) — offensive side, not passive collection.
 
-honeymcp fills a gap: passive intel collection on what attackers actually send to MCP servers in the wild, with server-shape accurate enough to sustain multi-turn interaction. Maps to OWASP Top 10 for Agentic Applications 2026 — **ASI04 (Agentic Supply Chain Vulnerabilities)**.
+`honeymcp` fills a gap: **passive intel collection** on what attackers actually send to MCP servers in the wild, with server-shape accurate enough to sustain multi-turn interaction. Maps to OWASP Top 10 for Agentic Applications 2026 — **ASI04 (Agentic Supply Chain Vulnerabilities)** and **ASI05 (Unexpected Code Execution)**.
 
 ## Roadmap
 
