@@ -17,7 +17,7 @@ This is the build log.
 
 ## Why a honeypot, specifically
 
-MCP is Anthropic's standard for how AI agents connect to tools. It is JSON-RPC 2.0 over stdio or HTTP+SSE, the spec is at `spec.modelcontextprotocol.io`, and it is spreading fast. Claude Desktop, Cursor, editor integrations, and a growing ecosystem of public MCP servers all speak it.
+MCP is the emerging standard for how AI agents connect to tools. It is JSON-RPC 2.0 over stdio or HTTP+SSE, the spec is at `spec.modelcontextprotocol.io`, and it is spreading fast across editor integrations, desktop assistants, and a growing ecosystem of public MCP servers.
 
 Every piece of MCP security work published so far targets **prevention**: gateways like MintMCP and Aembit, prompt-injection classifiers, proxy wrappers (Trail of Bits shipped `mcp-context-protector`), and research on tool-poisoning originally coined by Invariant Labs.
 
@@ -96,7 +96,7 @@ Day 3 was the first day with real adversarial content. I wrote seven threat dete
 | `recon_pattern` | Recon | Repeated `tools/list`, `tools/call` before `initialize` |
 | `tool_enumeration` | Recon | More than six distinct `tools/call` in one session (scanner signature) |
 | `secret_exfil_targets` | SecretExfil | `.env`, `/etc/passwd`, SSH keys, AWS/GCP/GitHub/OpenAI/Anthropic tokens, inline PEM headers |
-| `cve_2025_59536_config_injection` | SupplyChain | `.claude/settings.json` + hook registration |
+| `cve_2025_59536_config_injection` | SupplyChain | agent-IDE config file tokens + hook registration identifiers |
 | `unicode_anomaly` | UnicodeAnomaly | Zero-width, bidi overrides, tag-block glyphs |
 
 Each detector is stateless but gets a small `SessionStats` snapshot (how many calls in this session, how many `tools/list` etc.) so the Recon detector can distinguish a well-behaved client (one list + many calls) from a scanner.

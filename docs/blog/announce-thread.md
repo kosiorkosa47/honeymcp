@@ -67,7 +67,7 @@ Post on LinkedIn after the X thread is out. Paste:
 
 I spent three days building honeymcp, an open-source standalone honeypot for Model Context Protocol (MCP) servers. It's live now.
 
-MCP is Anthropic's standard for connecting AI agents to tools. It's spreading fast - Claude Desktop, Cursor, a growing ecosystem of public MCP servers. Most published security work targets prevention (gateways, classifiers). There is almost no public telemetry on what attackers actually send to MCP servers in the wild, because no one has been running a wild honeypot to collect it.
+MCP is the emerging standard for connecting AI agents to tools. It is spreading fast across the agent-tooling ecosystem. Most published security work targets prevention (gateways, classifiers). There is almost no public telemetry on what attackers actually send to MCP servers in the wild, because no one has been running a wild honeypot to collect it.
 
 honeymcp is an attempt to close that gap.
 
