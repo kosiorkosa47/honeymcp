@@ -129,6 +129,22 @@ tools:
 
 The persona is the only knob you need to turn to impersonate a new service.
 
+## honeymcp-probes
+
+Ships as a second binary in this crate. A CLI battery of 13 attack payloads you point at any MCP endpoint to see what gets through:
+
+```bash
+honeymcp-probes --target http://your-mcp-server/message
+
+# JSON report for CI:
+honeymcp-probes --target http://your-mcp-server/message --json > report.json
+
+# Fail the build if any Critical-severity probe gets HTTP 2xx back:
+honeymcp-probes --target http://your-mcp-server/message --fail-on-critical
+```
+
+The probe taxonomy mirrors the server's detector taxonomy exactly — anything `honeymcp-probes` sends is something `honeymcp` is tuned to spot. Defenders can audit their own MCP server without needing to run the sensor.
+
 ## Development
 
 Clone, then enable the versioned pre-commit hook (runs `cargo fmt --check` + `cargo clippy -D warnings` before every commit):

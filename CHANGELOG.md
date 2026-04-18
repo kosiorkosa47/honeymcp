@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.4.0] - 2026-04-18 (Day 4)
+
+### Added
+
+- **`honeymcp-probes`** binary: a CLI that hammers an MCP endpoint with 13
+  attack payloads (prompt injection, shell injection, secret-exfil targets,
+  CVE-2025-59536-class hook injection, unicode smuggling, recon patterns) and
+  reports what the server accepted. Intended use: defenders auditing their
+  own MCP servers; CI gate via `--fail-on-critical`; researchers benchmarking
+  MCP-security products. Shares the Rust crate and the attack taxonomy with
+  the server-side detectors so what `probes` sends is exactly what `honeymcp`
+  is tuned to detect.
+
+### Changed
+
+- **Real remote address preserved through reverse proxies.** The HTTP
+  transport now prefers the first hop in `X-Forwarded-For` over the raw
+  socket peer when building `RequestContext::remote_addr`. Deployments
+  sitting behind Caddy / nginx / Cloudflare now log the actual attacker IP
+  instead of the proxy's loopback address. Sample deployment uses Caddy on
+  port 80 proxying to the honeymcp container on 8080; Caddy's Caddyfile is
+  a one-liner.
+
 ## [0.3.3] - 2026-04-17 (Day 3 late night)
 
 ### Security hardening pass

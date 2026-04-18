@@ -268,10 +268,21 @@ async fn message_handler(
         }
     };
 
+    // Prefer the first hop in X-Forwarded-For as the logged remote_addr when we're
+    // sitting behind a reverse proxy. The raw socket peer will be 127.0.0.1 in that
+    // case, which carries no threat-intel value. When the proxy is absent (or the
+    // caller connects directly to this process), `remote` is the real client peer.
+    let real_addr = headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next().map(|p| p.trim().to_string()))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| remote.to_string());
+
     let ctx = RequestContext {
         session_id: session_id.clone(),
         transport: "http",
-        remote_addr: Some(remote.to_string()),
+        remote_addr: Some(real_addr),
         user_agent,
         client_meta,
     };
