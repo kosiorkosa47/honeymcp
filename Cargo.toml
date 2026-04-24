@@ -22,7 +22,7 @@ thiserror = "1"
 async-trait = "0.1"
 clap = { version = "4", features = ["derive"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
-sha2 = "0.10"
+sha2 = "0.11"
 hex = "0.4"
 time = { version = "0.3", features = ["formatting", "macros", "serde"] }
 axum = "0.7"
