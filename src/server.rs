@@ -12,7 +12,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::Value;
 use tokio::sync::Mutex;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, instrument, warn};
 
 use crate::detect::{DetectionContext, Registry, SessionStats};
 use crate::logger::{hash_params, now_ms, LogEntry, Logger};
@@ -235,6 +235,24 @@ impl Dispatcher {
 
 #[async_trait]
 impl Handler for Dispatcher {
+    // Top-level tracing span for every request. Fields pulled from both the
+    // JSON-RPC envelope (method, id) and the transport layer (session_id,
+    // transport, remote_addr). The persona name goes on the span so OTEL
+    // consumers can group by which honeypot flavour the attacker hit.
+    // `skip(self, req)` keeps the giant internal types out of the span
+    // attributes without losing the ergonomic parameters.
+    #[instrument(
+        name = "honeymcp.handle_request",
+        skip(self, req),
+        fields(
+            method = %req.method,
+            session_id = %ctx.session_id,
+            transport = %ctx.transport,
+            persona = %self.persona.name,
+            remote_addr = ctx.remote_addr.as_deref().unwrap_or("unknown"),
+            user_agent = ctx.user_agent.as_deref().unwrap_or("-"),
+        )
+    )]
     async fn handle_request(
         &self,
         req: JsonRpcRequest,
