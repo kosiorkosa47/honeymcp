@@ -12,6 +12,9 @@
 //! - `GET /mcp` — opens a long-lived server-to-client SSE stream for the session, for
 //!   out-of-band notifications. The session is identified by the `Mcp-Session-Id`
 //!   header (preferred) or the `session_id` query parameter (fallback).
+//! - `DELETE /mcp` — explicit session teardown. Evicts any attached SSE subscriber
+//!   for the session. Always returns `204 No Content` (including for unknown
+//!   sessions — we do not leak whether a session was active).
 //! - The MCP protocol version travels in the `MCP-Protocol-Version` request header.
 //!   The server records it in `client_meta` for threat-intel but does NOT reject
 //!   missing or mismatched versions — bad headers are themselves a useful signal.
@@ -197,7 +200,12 @@ impl Transport for HttpTransport {
         // flood against /message.
         let message_routes = Router::new()
             .route("/message", post(message_handler))
-            .route("/mcp", post(mcp_post_handler).get(mcp_sse_handler))
+            .route(
+                "/mcp",
+                post(mcp_post_handler)
+                    .get(mcp_sse_handler)
+                    .delete(mcp_delete_handler),
+            )
             .layer(governor_layer)
             .layer(body_limit)
             .with_state(state.clone());
@@ -528,6 +536,27 @@ async fn mcp_post_handler(
     }
 }
 
+/// Streamable HTTP DELETE per MCP spec 2025-06-18: explicit session teardown.
+///
+/// Evicts any attached SSE subscriber for the session and returns `204 No Content`.
+/// Unknown sessions also return 204 — we deliberately do not differentiate so a
+/// scanner cannot probe for live session IDs by watching for 404 vs 204.
+async fn mcp_delete_handler(
+    Query(q): Query<SessionQuery>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Response {
+    let session_id = resolve_session_id(&q, &headers);
+    let existed = {
+        let mut sessions = state.sessions.write().await;
+        sessions.remove(&session_id).is_some()
+    };
+    if existed {
+        debug!(session = %session_id, "/mcp session torn down by client");
+    }
+    StatusCode::NO_CONTENT.into_response()
+}
+
 /// Streamable HTTP GET per MCP spec 2025-06-18: a server-to-client SSE channel for
 /// unsolicited notifications tied to a session. Session routing and lifecycle are
 /// identical to the legacy `/sse` handler; the only distinction is the URL.
@@ -689,7 +718,12 @@ mod tests {
         };
         let app = Router::new()
             .route("/message", post(message_handler))
-            .route("/mcp", post(mcp_post_handler).get(mcp_sse_handler))
+            .route(
+                "/mcp",
+                post(mcp_post_handler)
+                    .get(mcp_sse_handler)
+                    .delete(mcp_delete_handler),
+            )
             .with_state(state);
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -815,6 +849,30 @@ mod tests {
         assert_eq!(parsed["error"]["code"], -32700);
     }
 
+    #[tokio::test]
+    async fn streamable_http_delete_returns_204_whether_or_not_session_existed() {
+        let (addr, _handler) = spawn_app().await;
+
+        // Unknown session — 204 with no leaking differentiation.
+        let resp = raw_delete(&addr, "/mcp?session_id=never-existed", &[]).await;
+        assert_eq!(resp.status, 204);
+        assert!(resp.body.trim().is_empty());
+
+        // Create a session via POST /mcp (SSE GET is how sessions actually get
+        // entered into the subscriber map, but for this test we just assert the
+        // DELETE path is idempotent and does not 404/500).
+        let _ = raw_post(
+            &addr,
+            "/mcp",
+            r#"{"jsonrpc":"2.0","method":"ping","id":99}"#,
+            &[("Mcp-Session-Id", "to-be-torn-down")],
+        )
+        .await;
+
+        let resp = raw_delete(&addr, "/mcp", &[("Mcp-Session-Id", "to-be-torn-down")]).await;
+        assert_eq!(resp.status, 204);
+    }
+
     struct HttpResp {
         status: u16,
         body: String,
@@ -835,6 +893,48 @@ mod tests {
             extra.push(("User-Agent", u));
         }
         raw_post(addr, "/message", body, &extra).await
+    }
+
+    async fn raw_delete(addr: &SocketAddr, path: &str, extra_headers: &[(&str, &str)]) -> HttpResp {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let mut hdrs = String::new();
+        for (k, v) in extra_headers {
+            hdrs.push_str(&format!("{k}: {v}\r\n"));
+        }
+        let req = format!(
+            "DELETE {path} HTTP/1.1\r\n\
+             Host: {addr}\r\n\
+             {hdrs}Connection: close\r\n\r\n"
+        );
+        stream.write_all(req.as_bytes()).await.unwrap();
+        let mut buf = Vec::new();
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            stream.read_to_end(&mut buf),
+        )
+        .await;
+        let text = String::from_utf8_lossy(&buf).to_string();
+        let (head, body) = text.split_once("\r\n\r\n").unwrap_or((&text, ""));
+        let first_line = head.lines().next().unwrap_or("");
+        let status = first_line
+            .split_whitespace()
+            .nth(1)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        let headers: Vec<(String, String)> = head
+            .lines()
+            .skip(1)
+            .filter_map(|line| {
+                line.split_once(':')
+                    .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+            })
+            .collect();
+        HttpResp {
+            status,
+            body: body.to_string(),
+            headers,
+        }
     }
 
     async fn raw_post(
