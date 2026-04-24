@@ -12,7 +12,19 @@
 
 **Status:** Building toward v1.0 on a 28-day sprint. Currently speaks Streamable HTTP (MCP spec 2025-06-18) and legacy HTTP+SSE side by side.
 
-**Live:** [operator banner](http://54.169.235.208/) + [dashboard](http://54.169.235.208/dashboard) (Singapore, Lightsail).
+**Live:** [operator banner](http://54.169.235.208/) + [dashboard](http://54.169.235.208/dashboard).
+
+## What this is
+
+honeymcp is a **passive sensor**, not a proxy or a firewall. You stand it up on an internet-reachable host (VPS, home lab, cloud edge — the binary is ~15 MB and runs under 256 MiB of RAM), point DNS at it, and it behaves convincingly enough like a real MCP server that anyone scanning for or attacking MCP endpoints talks to it instead of moving on. Every request they send is logged, classified, and redacted before it lands on disk.
+
+Concretely, an MCP client — a desktop agent, an IDE integration, an autonomous research runner, or a hostile scanner — connects over **stdio** or **HTTP** and speaks JSON-RPC 2.0. honeymcp completes the handshake, lists a plausible catalogue of tools from a **persona** YAML file you control (the default `postgres-admin` persona advertises a read-only SQL introspection surface; `github-admin` advertises repo admin), then returns canned, deterministic responses to `tools/call`. The attacker sees a live, responsive MCP server; you see the complete protocol trace, a SHA-256 hash of their parameters, the IP and User-Agent they arrived from, and the `MCP-Protocol-Version` header they claim. Seven independent detectors (prompt injection, shell injection, CVE-2025-59536-class hook injection, secret exfiltration attempts, unicode smuggling, reconnaissance patterns, tool-enumeration behaviour) tag each event at write time so analysts can filter for interesting traffic without scanning the whole corpus.
+
+The operator-facing surface is small on purpose. `GET /` serves a plain-text **research-honeypot banner** with a GDPR-compliant disclosure and an abuse contact; `GET /dashboard` is a single-page HTML view over the live SQLite store; `GET /stats` returns JSON aggregates the dashboard consumes. There is no admin panel, no auth, no mutable server state exposed to the network. A separate binary, **`honeymcp-probes`**, ships in the same crate: it fires the same 13-payload attack battery that the detectors are tuned for, which lets defenders audit their *own* MCP servers without running the sensor or waiting for real attacks.
+
+The captured data is what makes this useful. There is no publicly-available corpus of what attackers actually send to MCP servers — the protocol is new, the products using it ship quickly, and the threat-intel feeds that cover the traditional web-app class do not cover this layer yet. Running honeymcp produces that corpus for your deployment, and — with the upcoming weekly report pipeline — a redacted public telemetry feed the ecosystem can use. Captured payloads are redacted for obvious secrets (GitHub PAT, AWS access keys, PEM blocks, JWT-shaped tokens, Slack tokens) at write time in both directions, so neither the echo-back nor the log carries live credentials the attacker sent.
+
+On the build side, this is a Rust 1.88+ single-static-binary daemon (one `cargo build --release`, no runtime deps beyond libc). Storage is SQLite by default; a Postgres backend with pgvector is available opt-in for deployments that want multi-host ingestion or embedding-based clustering. Observability is stderr-pretty-text by default, flips to structured ndjson with `HONEYMCP_LOG_FORMAT=json`, and forwards OpenTelemetry traces to any OTLP collector when built with `--features otel`. Container images are multi-arch (amd64 + arm64) and **cosign-keyless signed** via OIDC — the signing identity is the GitHub Actions runner that built the image, not a key in a vault, so every release is cryptographically tied to a specific commit in this repo.
 
 ## Why
 
