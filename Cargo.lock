@@ -858,7 +858,7 @@ dependencies = [
  "sha2",
  "sqlx",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "time",
  "tokio",
  "tower 0.5.3",
