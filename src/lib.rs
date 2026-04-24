@@ -2,6 +2,7 @@
 
 pub mod detect;
 pub mod logger;
+pub mod observability;
 pub mod persona;
 pub mod protocol;
 pub mod server;

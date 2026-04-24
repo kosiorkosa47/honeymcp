@@ -79,6 +79,38 @@ Everything below targets the next release tag (`v0.6.0-rc.1`).
   TOM inventory, publication defaults (IP truncation to `/24` or `/48`
   before sharing derived datasets), operator signature block.
 
+### Added — observability
+
+- New `honeymcp::observability` module, single call at startup wires up the
+  tracing stack. Two env knobs:
+  - `HONEYMCP_LOG_FORMAT=json` switches the stderr `fmt` layer from pretty
+    to structured ndjson (one event per line, ready to ship to
+    Loki / Cloudwatch / Datadog without a parser).
+  - Opt-in OTLP exporter behind `--features otel`. When built with the
+    feature **and** `OTEL_EXPORTER_OTLP_ENDPOINT` is set, spans are
+    forwarded via gRPC/tonic to the configured collector; when either is
+    false, the OTEL layer is not registered and there is zero runtime
+    cost. `OTEL_SERVICE_NAME` defaults to `honeymcp`.
+- `observability::init()` returns a `Guard` that the binary holds until
+  shutdown; dropping it flushes the OTLP exporter so in-flight spans are
+  not lost on graceful exit.
+
+### Added — storage scaffolding
+
+- Optional Postgres backend behind `--features postgres` (sqlx 0.8.6,
+  postgres-only features to avoid a libsqlite3-sys collision with
+  rusqlite's bundled copy). Default build is unchanged — SQLite + JSONL
+  remains the only storage path without the feature flag.
+- `migrations/20260424_0001_init.sql` / `_0002_pgvector.sql` — schema
+  (sessions, events, detections, personas_snapshot) + pgvector HNSW
+  index for 384-dim sentence-transformer embeddings.
+- `docker compose up -d postgres` starts `pgvector/pgvector:pg16` bound
+  to `127.0.0.1:5432` only. `make db-migrate` applies the SQL files via
+  psql against `DATABASE_URL`.
+- `src/logger/postgres.rs` is a stub; `connect()` bails with an explicit
+  "not implemented yet" so no `postgres://` URL accidentally routes
+  into the void. Concrete backend lands in a follow-up commit.
+
 ### Added — repo scaffolding
 
 - `rust-toolchain.toml` pin (1.89.0 — needs to be ≥ 1.89 for `cargo-audit`

@@ -7,7 +7,6 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use tracing::info;
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use honeymcp::detect::Registry;
 use honeymcp::logger::Logger;
@@ -59,10 +58,7 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::registry()
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
-        .with(fmt::layer().with_writer(std::io::stderr))
-        .init();
+    let _observability_guard = honeymcp::observability::init()?;
 
     let cli = Cli::parse();
 

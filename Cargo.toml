@@ -39,9 +39,19 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # scale for the multi-region deployment described in docs/ARCHITECTURE.md.
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres"], optional = true }
 
+# OpenTelemetry exporter chain (opt-in via --features otel). When enabled,
+# spans from the tracing layer are forwarded to an OTLP collector; when
+# disabled, the stderr fmt layer is the only subscriber and there's zero
+# extra dependency weight.
+opentelemetry = { version = "0.27", optional = true }
+opentelemetry-otlp = { version = "0.27", default-features = false, features = ["grpc-tonic", "trace"], optional = true }
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"], optional = true }
+tracing-opentelemetry = { version = "0.28", optional = true }
+
 [features]
 default = []
 postgres = ["dep:sqlx"]
+otel = ["dep:opentelemetry", "dep:opentelemetry-otlp", "dep:opentelemetry_sdk", "dep:tracing-opentelemetry"]
 
 [[bin]]
 name = "honeymcp-probes"
