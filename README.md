@@ -8,7 +8,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
 
-> An open-source honeypot for the [Model Context Protocol](https://spec.modelcontextprotocol.io/) — impersonates a legitimate MCP server to collect threat intelligence on attacks against the MCP ecosystem.
+> An open-source honeypot for the [Model Context Protocol](https://spec.modelcontextprotocol.io/) - impersonates a legitimate MCP server to collect threat intelligence on attacks against the MCP ecosystem.
 
 **Status:** Building toward v1.0 on a 28-day sprint. Currently speaks Streamable HTTP (MCP spec 2025-06-18) and legacy HTTP+SSE side by side.
 
@@ -16,15 +16,15 @@
 
 ## What this is
 
-honeymcp is a **passive sensor**, not a proxy or a firewall. You stand it up on an internet-reachable host (VPS, home lab, cloud edge — the binary is ~15 MB and runs under 256 MiB of RAM), point DNS at it, and it behaves convincingly enough like a real MCP server that anyone scanning for or attacking MCP endpoints talks to it instead of moving on. Every request they send is logged, classified, and redacted before it lands on disk.
+I built honeymcp because there's no public record of what attackers actually send to MCP servers. The protocol is a year old, products using it ship weekly, and the usual web threat feeds don't cover this layer yet. So I wrote the sensor that collects it.
 
-Concretely, an MCP client — a desktop agent, an IDE integration, an autonomous research runner, or a hostile scanner — connects over **stdio** or **HTTP** and speaks JSON-RPC 2.0. honeymcp completes the handshake, lists a plausible catalogue of tools from a **persona** YAML file you control (the default `postgres-admin` persona advertises a read-only SQL introspection surface; `github-admin` advertises repo admin), then returns canned, deterministic responses to `tools/call`. The attacker sees a live, responsive MCP server; you see the complete protocol trace, a SHA-256 hash of their parameters, the IP and User-Agent they arrived from, and the `MCP-Protocol-Version` header they claim. Seven independent detectors (prompt injection, shell injection, CVE-2025-59536-class hook injection, secret exfiltration attempts, unicode smuggling, reconnaissance patterns, tool-enumeration behaviour) tag each event at write time so analysts can filter for interesting traffic without scanning the whole corpus.
+It's one Rust binary. About 15 MB, SQLite on disk, fits in 256 MiB of RAM. You run it, point DNS, and it answers MCP handshakes the way a real server would. Personas are YAML. You pick one (I ship `postgres-admin` and `github-admin`) and anyone scanning the internet for MCP endpoints gets a full conversation with fake tools and canned responses.
 
-The operator-facing surface is small on purpose. `GET /` serves a plain-text **research-honeypot banner** with a GDPR-compliant disclosure and an abuse contact; `GET /dashboard` is a single-page HTML view over the live SQLite store; `GET /stats` returns JSON aggregates the dashboard consumes. There is no admin panel, no auth, no mutable server state exposed to the network. A separate binary, **`honeymcp-probes`**, ships in the same crate: it fires the same 13-payload attack battery that the detectors are tuned for, which lets defenders audit their *own* MCP servers without running the sensor or waiting for real attacks.
+What lands in SQLite: timestamp, method, IP, User-Agent, client name and version, the `Mcp-Session-Id` they used, the `MCP-Protocol-Version` they claimed, and a SHA-256 of the raw params so reruns correlate. Seven detectors tag events at write time, so you can grep for "prompt-injection traffic that also did tool-enumeration" without scanning the whole DB.
 
-The captured data is what makes this useful. There is no publicly-available corpus of what attackers actually send to MCP servers — the protocol is new, the products using it ship quickly, and the threat-intel feeds that cover the traditional web-app class do not cover this layer yet. Running honeymcp produces that corpus for your deployment, and — with the upcoming weekly report pipeline — a redacted public telemetry feed the ecosystem can use. Captured payloads are redacted for obvious secrets (GitHub PAT, AWS access keys, PEM blocks, JWT-shaped tokens, Slack tokens) at write time in both directions, so neither the echo-back nor the log carries live credentials the attacker sent.
+It's not a proxy. It won't protect your production MCP server. It's a trap you put on the internet to learn from. `GET /` returns a plain-text banner saying exactly that with a GDPR erasure contact. `GET /dashboard` shows the live feed. No admin panel, no write path exposed to the network.
 
-On the build side, this is a Rust 1.88+ single-static-binary daemon (one `cargo build --release`, no runtime deps beyond libc). Storage is SQLite by default; a Postgres backend with pgvector is available opt-in for deployments that want multi-host ingestion or embedding-based clustering. Observability is stderr-pretty-text by default, flips to structured ndjson with `HONEYMCP_LOG_FORMAT=json`, and forwards OpenTelemetry traces to any OTLP collector when built with `--features otel`. Container images are multi-arch (amd64 + arm64) and **cosign-keyless signed** via OIDC — the signing identity is the GitHub Actions runner that built the image, not a key in a vault, so every release is cryptographically tied to a specific commit in this repo.
+`honeymcp-probes` is the second binary in this crate. It fires the same 13 payloads the detectors are tuned for, so you can audit your own MCP server without standing up a honeypot. Same codebase, same taxonomy.
 
 ## Why
 
@@ -37,7 +37,7 @@ MCP is a young protocol with a rapidly growing attack surface: **tool poisoning*
 - Speaks **legacy HTTP+SSE** (`POST /message`, `GET /sse`) for older clients that have not moved to the 2025-06-18 transport yet.
 - Handles `initialize`, `tools/list`, `tools/call`, and the common `notifications/*` frames.
 - Records `MCP-Protocol-Version`, `X-Forwarded-For`, `Accept`, and `User-Agent` alongside every request for threat-intel correlation.
-- Loads a **persona** from YAML — server name, version, instructions, and a list of fake tools with canned responses.
+- Loads a **persona** from YAML - server name, version, instructions, and a list of fake tools with canned responses.
 - Ships **two personas** out of the box: `postgres-admin` and `github-admin`.
 - Ships as a **Docker image** for one-command deploy; release builds are cosign-keyless-signed with SPDX + CycloneDX SBOMs attached.
 - Serves an **operator banner** (research-honeypot disclosure + GDPR contact) at `GET /`, dashboard at `/dashboard`.
@@ -172,7 +172,7 @@ honeymcp-probes --target http://your-mcp-server/message --json > report.json
 honeymcp-probes --target http://your-mcp-server/message --fail-on-critical
 ```
 
-The probe taxonomy mirrors the server's detector taxonomy exactly — anything `honeymcp-probes` sends is something `honeymcp` is tuned to spot. Defenders can audit their own MCP server without needing to run the sensor.
+The probe taxonomy mirrors the server's detector taxonomy exactly - anything `honeymcp-probes` sends is something `honeymcp` is tuned to spot. Defenders can audit their own MCP server without needing to run the sensor.
 
 ## Development
 
@@ -195,8 +195,8 @@ make docker       # local image build
 
 Default build is SQLite + stderr logs, no external services. Two opt-in features:
 
-- `--features postgres` — Postgres backend via sqlx 0.8.6 (pgvector-ready). Pair with `docker compose up -d postgres && make db-migrate` for a local dev DB. Concrete backend wiring is still in progress; the feature currently compiles the scaffolding only.
-- `--features otel` — OpenTelemetry OTLP exporter. Spans are forwarded via gRPC/tonic to `OTEL_EXPORTER_OTLP_ENDPOINT` when set; the layer is not registered otherwise, so enabling the feature without setting the env var costs nothing.
+- `--features postgres` - Postgres backend via sqlx 0.8.6 (pgvector-ready). Pair with `docker compose up -d postgres && make db-migrate` for a local dev DB. Concrete backend wiring is still in progress; the feature currently compiles the scaffolding only.
+- `--features otel` - OpenTelemetry OTLP exporter. Spans are forwarded via gRPC/tonic to `OTEL_EXPORTER_OTLP_ENDPOINT` when set; the layer is not registered otherwise, so enabling the feature without setting the env var costs nothing.
 
 ### Runtime env vars
 
@@ -216,11 +216,11 @@ Contributions: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (security disclosure →
 
 Adjacent work exists but targets different layers:
 
-- **MCP gateways** (MintMCP, Aembit) — protective proxies for legitimate deployments, not deception.
-- **Prompt-injection classifiers** (StackOne Defender, Augustus, CloneGuard) — detect payloads, don't generate attack telemetry.
-- **Agent red-team tools** (DeepTeam, Garak) — offensive side, not passive collection.
+- **MCP gateways** (MintMCP, Aembit) - protective proxies for legitimate deployments, not deception.
+- **Prompt-injection classifiers** (StackOne Defender, Augustus, CloneGuard) - detect payloads, don't generate attack telemetry.
+- **Agent red-team tools** (DeepTeam, Garak) - offensive side, not passive collection.
 
-`honeymcp` fills a gap: **passive intel collection** on what attackers actually send to MCP servers in the wild, with server-shape accurate enough to sustain multi-turn interaction. Maps to OWASP Top 10 for Agentic Applications 2026 — **ASI04 (Agentic Supply Chain Vulnerabilities)** and **ASI05 (Unexpected Code Execution)**.
+`honeymcp` fills a gap: **passive intel collection** on what attackers actually send to MCP servers in the wild, with server-shape accurate enough to sustain multi-turn interaction. Maps to OWASP Top 10 for Agentic Applications 2026 - **ASI04 (Agentic Supply Chain Vulnerabilities)** and **ASI05 (Unexpected Code Execution)**.
 
 ## Roadmap toward v1.0
 
@@ -228,10 +228,10 @@ Working target: `v1.0.0-rc.1` on a 28-day sprint.
 
 | Week | Focus | Status |
 |------|-------|--------|
-| 1 — Foundation | stdio + Streamable HTTP + legacy HTTP+SSE, 7 detectors, CI (fmt + clippy + test matrix + audit + deny + coverage), signed release workflow, threat model + GDPR LIA | ✅ shipped |
-| 2 — Infrastructure | Postgres + pgvector backend, Terraform module set, multi-region deploy (EKS central + k3s edges), observability stack | in progress |
-| 3 — Analysis | Embeddings pipeline, rule + LLM classifier against OWASP T1–T15, HDBSCAN clustering, weekly report generator | pending |
-| 4 — Dashboard + v1.0 | Web dashboard (live feed + clusters + reports), STIX 2.1 export, landing page, security hardening, cut `v1.0.0-rc.1` | pending |
+| 1 - Foundation | stdio + Streamable HTTP + legacy HTTP+SSE, 7 detectors, CI (fmt + clippy + test matrix + audit + deny + coverage), signed release workflow, threat model + GDPR LIA | ✅ shipped |
+| 2 - Infrastructure | Postgres + pgvector backend, Terraform module set, multi-region deploy (EKS central + k3s edges), observability stack | in progress |
+| 3 - Analysis | Embeddings pipeline, rule + LLM classifier against OWASP T1–T15, HDBSCAN clustering, weekly report generator | pending |
+| 4 - Dashboard + v1.0 | Web dashboard (live feed + clusters + reports), STIX 2.1 export, landing page, security hardening, cut `v1.0.0-rc.1` | pending |
 
 ## Verify a release
 
@@ -247,4 +247,4 @@ SBOMs (SPDX + CycloneDX) are attached to each GitHub Release and also attested t
 
 ## License
 
-Apache-2.0 — see `LICENSE`.
+Apache-2.0 - see `LICENSE`.
