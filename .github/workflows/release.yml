@@ -212,10 +212,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download build artifacts
+      # Bulk `download-artifact@v4` against many artifacts is flaky on the
+      # parallel blob-storage fetch; switch to per-artifact pulls with
+      # merge-multiple so each download is its own retry domain.
+      - name: Download binary artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
+          pattern: binary-*
+          merge-multiple: true
+
+      - name: Download SBOM artifact
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: sbom
+          merge-multiple: true
 
       - name: Extract changelog for this version
         id: changelog
@@ -240,10 +252,10 @@ jobs:
           body_path: release-notes.md
           prerelease: ${{ contains(github.ref_name, '-rc.') }}
           files: |
-            dist/**/honeymcp-*.tar.gz
-            dist/**/honeymcp-*.tar.gz.sha256
-            dist/**/honeymcp-*.zip
-            dist/**/honeymcp-*.zip.sha256
-            dist/sbom/honeymcp.spdx.json
-            dist/sbom/honeymcp.cdx.json
+            dist/honeymcp-*.tar.gz
+            dist/honeymcp-*.tar.gz.sha256
+            dist/honeymcp-*.zip
+            dist/honeymcp-*.zip.sha256
+            dist/honeymcp.spdx.json
+            dist/honeymcp.cdx.json
           fail_on_unmatched_files: false
