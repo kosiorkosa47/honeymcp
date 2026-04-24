@@ -10,9 +10,9 @@
 
 > An open-source honeypot for the [Model Context Protocol](https://spec.modelcontextprotocol.io/) — impersonates a legitimate MCP server to collect threat intelligence on attacks against the MCP ecosystem.
 
-**Status:** Day 3 of 30 - building in public.
+**Status:** Building toward v1.0 on a 28-day sprint. Currently speaks Streamable HTTP (MCP spec 2025-06-18) and legacy HTTP+SSE side by side.
 
-**Live:** [honeypot dashboard](http://54.169.235.208/dashboard) (Singapore, Lightsail).
+**Live:** [operator banner](http://54.169.235.208/) + [dashboard](http://54.169.235.208/dashboard) (Singapore, Lightsail).
 
 ## Why
 
@@ -21,14 +21,18 @@ MCP is a young protocol with a rapidly growing attack surface: **tool poisoning*
 ## What it does today
 
 - Speaks **JSON-RPC 2.0 over stdio** (the baseline MCP transport).
-- Speaks **HTTP + SSE** as well as stdio.
+- Speaks **Streamable HTTP** (MCP spec 2025-06-18): `POST /mcp` with `Accept`-based negotiation (JSON or single-message SSE), `GET /mcp` for server-to-client SSE, `DELETE /mcp` for explicit session teardown, session identified by `Mcp-Session-Id` header.
+- Speaks **legacy HTTP+SSE** (`POST /message`, `GET /sse`) for older clients that have not moved to the 2025-06-18 transport yet.
 - Handles `initialize`, `tools/list`, `tools/call`, and the common `notifications/*` frames.
+- Records `MCP-Protocol-Version`, `X-Forwarded-For`, `Accept`, and `User-Agent` alongside every request for threat-intel correlation.
 - Loads a **persona** from YAML — server name, version, instructions, and a list of fake tools with canned responses.
 - Ships **two personas** out of the box: `postgres-admin` and `github-admin`.
-- Ships as a **Docker image** for one-command deploy.
+- Ships as a **Docker image** for one-command deploy; release builds are cosign-keyless-signed with SPDX + CycloneDX SBOMs attached.
+- Serves an **operator banner** (research-honeypot disclosure + GDPR contact) at `GET /`, dashboard at `/dashboard`.
+- Runs **seven threat detectors** (prompt injection, shell injection, CVE-2025-59536-class hook injection, secret exfil, unicode anomaly, recon, tool enumeration) on every request, tagging events at write time.
 - Logs every request/response to **SQLite** (primary, queryable) and optionally mirrors to **JSONL** (grep/jq-friendly), including timestamp, method, SHA-256 of params, raw params, client name/version, session id, transport, remote address, and User-Agent.
 
-Anomaly scoring and a live dashboard come in later days.
+Clustering, embeddings and a public weekly threat report come in later days of the sprint (see `.local-plans/` if you are the maintainer).
 
 ## Quickstart
 
@@ -110,12 +114,21 @@ flowchart LR
 ```
 src/
   protocol/    JSON-RPC 2.0 + MCP payload types
-  transport/   Transport trait, stdio implementation
+  transport/   Transport trait, stdio + http (Streamable + legacy SSE)
   persona/     YAML persona loader + validator
+  detect/      Seven detectors (prompt_injection, shell_injection,
+               cve_59536, secret_exfil, unicode_anomaly, recon,
+               tool_enumeration)
   logger/      SQLite + JSONL structured logging
   server.rs    Session / request dispatcher
   main.rs      CLI entry (clap)
-personas/      Example personas (postgres-admin)
+  bin/probes.rs  honeymcp-probes audit CLI
+personas/      Example personas (postgres-admin, github-admin)
+docs/
+  DEPLOYMENT.md         VPS deploy guide (Caddy + systemd)
+  threat-model.md       STRIDE pass + known gaps
+  legal/operator-banner.md   Research-honeypot banner template
+  legal/privacy-gdpr-lia.md  GDPR Art. 6(1)(f) LIA
 ```
 
 ## Persona format
@@ -157,13 +170,16 @@ Clone, then enable the versioned pre-commit hook (runs `cargo fmt --check` + `ca
 git config core.hooksPath .github/hooks
 ```
 
-Toolchain: Rust 1.88+ (edition 2024 dependencies).
+Toolchain: Rust 1.88+ (edition 2024 dependencies); the repo pins 1.89.0 via `rust-toolchain.toml` for local dev so `cargo-audit` / `cargo-deny` install cleanly.
 
 ```bash
-cargo test                    # run the suite (unit + integration)
-cargo fmt --all               # format
-cargo clippy --all-targets -- -D warnings
+make ci           # fmt-check + clippy -D warnings + test + audit + deny
+make test         # just the tests
+make coverage     # lcov.info via cargo-llvm-cov
+make docker       # local image build
 ```
+
+Contributions: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (security disclosure → [`SECURITY.md`](SECURITY.md)).
 
 ## Prior art & why honeymcp
 
@@ -175,12 +191,28 @@ Adjacent work exists but targets different layers:
 
 `honeymcp` fills a gap: **passive intel collection** on what attackers actually send to MCP servers in the wild, with server-shape accurate enough to sustain multi-turn interaction. Maps to OWASP Top 10 for Agentic Applications 2026 — **ASI04 (Agentic Supply Chain Vulnerabilities)** and **ASI05 (Unexpected Code Execution)**.
 
-## Roadmap
+## Roadmap toward v1.0
 
-- Day 2-7: HTTP/SSE transport, multi-session logging, prompt-injection detection heuristics
-- Day 8-14: persona library (GitHub MCP, filesystem, Slack, Linear), structured anomaly scoring
-- Day 15-21: live dashboard (web UI) over the SQLite event store
-- Day 22-30: public telemetry feed, CVE repros, write-up of findings
+Working target: `v1.0.0-rc.1` on a 28-day sprint.
+
+| Week | Focus | Status |
+|------|-------|--------|
+| 1 — Foundation | stdio + Streamable HTTP + legacy HTTP+SSE, 7 detectors, CI (fmt + clippy + test matrix + audit + deny + coverage), signed release workflow, threat model + GDPR LIA | ✅ shipped |
+| 2 — Infrastructure | Postgres + pgvector backend, Terraform module set, multi-region deploy (EKS central + k3s edges), observability stack | in progress |
+| 3 — Analysis | Embeddings pipeline, rule + LLM classifier against OWASP T1–T15, HDBSCAN clustering, weekly report generator | pending |
+| 4 — Dashboard + v1.0 | Web dashboard (live feed + clusters + reports), STIX 2.1 export, landing page, security hardening, cut `v1.0.0-rc.1` | pending |
+
+## Verify a release
+
+Release images and tag artifacts are signed via cosign keyless (OIDC). To verify before deploying:
+
+```bash
+cosign verify ghcr.io/kosiorkosa47/honeymcp:vX.Y.Z \
+  --certificate-identity-regexp 'https://github.com/kosiorkosa47/honeymcp/.*' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
+```
+
+SBOMs (SPDX + CycloneDX) are attached to each GitHub Release and also attested to the container image digest.
 
 ## License
 
