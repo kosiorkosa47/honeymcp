@@ -1,5 +1,59 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Repo scaffolding**: `rust-toolchain.toml` (pin 1.88.0), `deny.toml`, `Makefile`
+  with `fmt` / `lint` / `test` / `audit` / `deny` / `coverage` / `docker` / `ci`
+  targets, `.editorconfig`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` (Contributor
+  Covenant 2.1), and GitHub issue + PR templates. `make ci` is the local
+  one-shot: `cargo fmt --check && cargo clippy -D warnings && cargo test &&
+  cargo audit && cargo deny check`.
+
+### Security
+
+- Bumped `rustls-webpki` 0.103.12 → 0.103.13 to pick up the fix for
+  RUSTSEC-2026-0104 (reachable panic in CRL parsing, advisory published
+  2026-04-22). Transitive via `reqwest` → `rustls` → `rustls-webpki`.
+
+## [0.5.0] - 2026-04-18
+
+### Fixed
+
+- **`honeymcp-probes` semantics overhaul.** The 0.4.0 probes shipped with a
+  sequence of defects that made the output misleading as an audit signal:
+  - Response body was never parsed as JSON-RPC, so every HTTP 200 counted as
+    "accepted" regardless of whether the server actually returned an RPC
+    `error` or a `result`. Now the body is parsed and `error` responses are
+    classified as rejected (with a separate surface for rate-limited and
+    auth-required cases).
+  - No MCP handshake before session-dependent probes, so servers that enforce
+    `initialize` first would reject every probe as protocol-violating rather
+    than substantively. A single pre-flight `initialize` now runs before the
+    session-bearing probes unless `--skip-handshake` is set.
+  - Response redaction was one-directional: request payloads with live
+    secrets would be redacted before logging, but anything the server echoed
+    back in its response was written verbatim. Response text is now redacted
+    symmetrically.
+  - `--bearer` / `--header` flags for authenticated audits; `--no-redact` for
+    researchers who know what they're doing and want raw capture.
+
+### Changed
+
+- `[[bin]]` table split: `honeymcp` and `honeymcp-probes` are now explicit
+  binaries in `Cargo.toml` rather than relying on auto-discovery. This makes
+  `cargo install --path .` and `cargo build --release --bin honeymcp-probes`
+  unambiguous.
+- `wiremock` added as a dev-dependency. Drives `tests/probes_cli.rs` (6 tests)
+  against a controlled HTTP surface so the accepted-vs-rejected classifier
+  has repeatable fixtures.
+
+### Tests
+
+- 18/18 green across the workspace (library unit tests + `probes_cli`
+  integration tests).
+
 ## [0.4.0] - 2026-04-18 (Day 4)
 
 ### Added

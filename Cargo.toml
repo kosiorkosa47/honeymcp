@@ -1,6 +1,6 @@
 [package]
 name = "honeymcp"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 rust-version = "1.88"
 description = "Open-source MCP (Model Context Protocol) honeypot for collecting threat intelligence"
@@ -34,9 +34,18 @@ futures = "0.3"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
+[[bin]]
+name = "honeymcp-probes"
+path = "src/bin/probes.rs"
+
+[[bin]]
+name = "honeymcp"
+path = "src/main.rs"
+
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "io-util", "sync", "fs", "test-util"] }
+wiremock = "0.6"
 
 [profile.release]
 lto = "thin"
