@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/honeymcp-logo.png" alt="honeymcp logo" width="260"/>
+</p>
+
 # honeymcp
 
 [![CI](https://github.com/kosiorkosa47/honeymcp/actions/workflows/ci.yml/badge.svg)](https://github.com/kosiorkosa47/honeymcp/actions)
