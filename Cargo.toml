@@ -45,7 +45,7 @@ sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio
 # extra dependency weight.
 opentelemetry = { version = "0.27", optional = true }
 opentelemetry-otlp = { version = "0.27", default-features = false, features = ["grpc-tonic", "trace"], optional = true }
-opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"], optional = true }
+opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"], optional = true }
 tracing-opentelemetry = { version = "0.28", optional = true }
 
 [features]
