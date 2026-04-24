@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>honeymcp — research honeypot</title>
+<meta name="robots" content="noindex, nofollow">
+<style>
+  body { font: 15px/1.5 -apple-system, system-ui, sans-serif; max-width: 680px;
+         margin: 40px auto; padding: 0 16px; color: #111; background: #faf7f0; }
+  h1 { font-size: 22px; margin: 0 0 8px; }
+  h2 { font-size: 16px; margin: 24px 0 4px; color: #555; text-transform: uppercase;
+       letter-spacing: 0.05em; }
+  p, li { margin: 6px 0; }
+  code { background: #eee; padding: 0 4px; border-radius: 2px; font-size: 13px; }
+  a { color: #0a58ca; }
+  .meta { color: #666; font-size: 13px; margin-top: 24px; border-top: 1px solid #ddd;
+          padding-top: 12px; }
+</style>
+</head>
+<body>
+
+<h1>honeymcp — research honeypot</h1>
+
+<p>You are talking to a honeypot that simulates the
+<a href="https://spec.modelcontextprotocol.io/">Model Context Protocol</a>
+(MCP). This is <strong>not</strong> a production MCP server. No model is
+running on the other side, no real tools are connected, and no data you
+send will reach any downstream system other than the research log of this
+operator.</p>
+
+<h2>What we capture</h2>
+
+<ul>
+  <li>timestamp</li>
+  <li>source IP (may be truncated before long-term storage)</li>
+  <li>HTTP headers: <code>User-Agent</code>, <code>X-Forwarded-For</code>,
+      <code>MCP-Protocol-Version</code>, <code>Accept</code></li>
+  <li>full JSON-RPC body as sent</li>
+</ul>
+
+<p>Sensitive substrings (API keys, private key blocks, JWT-shaped tokens,
+Slack tokens) are redacted in any response we echo back to you and in any
+derived outputs we publish.</p>
+
+<h2>Why</h2>
+
+<p>We study how attackers target MCP servers so that defenders can build
+better mitigations. The GDPR Legitimate Interest Assessment is in
+<code>docs/legal/privacy-gdpr-lia.md</code> of the project repository.</p>
+
+<h2>Contact</h2>
+
+<p>Controller: {{CONTROLLER}}<br>
+Abuse / data-subject requests: <a href="mailto:{{ABUSE_EMAIL}}">{{ABUSE_EMAIL}}</a><br>
+Project: <a href="https://github.com/kosiorkosa47/honeymcp">github.com/kosiorkosa47/honeymcp</a></p>
+
+<p>To request that your IP be removed from retained logs, email
+<a href="mailto:{{ABUSE_EMAIL}}">{{ABUSE_EMAIL}}</a> with the IP in the
+subject. We will comply within 30 days per GDPR Art. 17 unless the record
+is part of an active incident investigation.</p>
+
+<p class="meta">Nothing on this endpoint is a live service, a honeytoken, or
+bait for law enforcement interaction. It exists to collect a corpus of real
+attacker behaviour against MCP, nothing more.</p>
+
+</body>
+</html>

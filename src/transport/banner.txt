@@ -1,0 +1,46 @@
+honeymcp — research honeypot
+============================
+
+You are talking to a honeypot that simulates the Model Context Protocol
+(MCP). This is not a production MCP server. No model is running on the
+other side, no real tools are connected, and no data you send will reach
+any downstream system other than the research log of this operator.
+
+What we capture
+---------------
+
+Every request to this endpoint is logged for the purpose of security
+research against the MCP attack class. Captured fields:
+
+  - timestamp
+  - source IP (may be truncated before long-term storage)
+  - HTTP headers (User-Agent, X-Forwarded-For, MCP-Protocol-Version, Accept)
+  - full JSON-RPC body as sent
+
+Sensitive substrings (API keys, private key blocks, JWT-shaped tokens,
+Slack tokens) are redacted in any response we echo back to you and in any
+derived outputs we publish.
+
+Why
+---
+
+We study how attackers target MCP servers so that defenders can build
+better mitigations. See docs/legal/privacy-gdpr-lia.md in the project
+repository for the GDPR Legitimate Interest Assessment.
+
+Contact
+-------
+
+Controller:               {{CONTROLLER}}
+Abuse / data requests:    {{ABUSE_EMAIL}}
+Project:                  https://github.com/kosiorkosa47/honeymcp
+
+To request that your IP be removed from retained logs, email
+{{ABUSE_EMAIL}} with the IP in the subject. We will comply within 30
+days per GDPR Art. 17 unless the record is part of an active incident
+investigation, in which case we will respond with the reason for the
+delay.
+
+Nothing on this endpoint is a live service, a honeytoken, or bait
+for law enforcement interaction. It exists to collect a corpus of
+real attacker behaviour against MCP, nothing more.

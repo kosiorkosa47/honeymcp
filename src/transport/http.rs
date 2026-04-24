@@ -207,7 +207,7 @@ impl Transport for HttpTransport {
             .route("/sse", get(sse_handler))
             .route("/stats", get(stats_handler))
             .route("/dashboard", get(dashboard_handler))
-            .route("/", get(dashboard_handler))
+            .route("/", get(banner_handler))
             .route("/healthz", get(|| async { "ok" }))
             .layer(cors)
             .with_state(state);
@@ -238,6 +238,88 @@ async fn dashboard_handler() -> Response {
         DASHBOARD_HTML,
     )
         .into_response()
+}
+
+/// Operator banner served at `GET /`. Serves the plain-text version by default; if
+/// the client sends `Accept: text/html`, the HTML version is returned instead.
+///
+/// Substitutes three runtime fields from env vars:
+/// - `HONEYMCP_BANNER_CONTROLLER` — name of the controller (GDPR Art. 4(7))
+/// - `HONEYMCP_BANNER_ABUSE_EMAIL` — monitored mailbox for data-subject requests
+/// - `HONEYMCP_BANNER_CONTACT` — optional human contact name
+///
+/// Missing env vars fall back to `<operator not configured>` deliberately — a
+/// production instance that ships a template-looking banner is better than one
+/// that silently fabricates a contact address.
+const BANNER_TEXT_TEMPLATE: &str = include_str!("banner.txt");
+const BANNER_HTML_TEMPLATE: &str = include_str!("banner.html");
+
+fn operator_banner_text() -> String {
+    let cfg = BannerConfig::from_env();
+    fill_banner(BANNER_TEXT_TEMPLATE, &cfg)
+}
+
+fn operator_banner_html() -> String {
+    let cfg = BannerConfig::from_env();
+    fill_banner(BANNER_HTML_TEMPLATE, &cfg)
+}
+
+struct BannerConfig {
+    controller: String,
+    abuse_email: String,
+    contact: String,
+}
+
+impl BannerConfig {
+    fn from_env() -> Self {
+        let unconfigured = "<operator not configured>".to_string();
+        Self {
+            controller: std::env::var("HONEYMCP_BANNER_CONTROLLER")
+                .unwrap_or_else(|_| unconfigured.clone()),
+            abuse_email: std::env::var("HONEYMCP_BANNER_ABUSE_EMAIL")
+                .unwrap_or_else(|_| unconfigured.clone()),
+            contact: std::env::var("HONEYMCP_BANNER_CONTACT")
+                .unwrap_or_else(|_| "research operator".to_string()),
+        }
+    }
+}
+
+fn fill_banner(template: &str, cfg: &BannerConfig) -> String {
+    template
+        .replace("{{CONTROLLER}}", &cfg.controller)
+        .replace("{{ABUSE_EMAIL}}", &cfg.abuse_email)
+        .replace("{{CONTACT}}", &cfg.contact)
+}
+
+fn client_accepts_html(headers: &HeaderMap) -> bool {
+    headers
+        .get("accept")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|s| {
+            let lower = s.to_ascii_lowercase();
+            // Prefer HTML only when the client explicitly asks for it. A plain
+            // curl sends `Accept: */*`, which should stay on the text path so
+            // operators doing quick probes get a readable response.
+            lower.contains("text/html")
+        })
+}
+
+async fn banner_handler(headers: HeaderMap) -> Response {
+    if client_accepts_html(&headers) {
+        (
+            StatusCode::OK,
+            [("content-type", "text/html; charset=utf-8")],
+            operator_banner_html(),
+        )
+            .into_response()
+    } else {
+        (
+            StatusCode::OK,
+            [("content-type", "text/plain; charset=utf-8")],
+            operator_banner_text(),
+        )
+            .into_response()
+    }
 }
 
 async fn stats_handler(State(state): State<AppState>) -> Response {
@@ -483,6 +565,60 @@ mod tests {
     use super::*;
     use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
     use async_trait::async_trait;
+
+    #[test]
+    fn banner_substitutes_all_placeholders_from_config() {
+        let cfg = BannerConfig {
+            controller: "Test Researcher".into(),
+            abuse_email: "abuse@example.test".into(),
+            contact: "Research Desk".into(),
+        };
+        let text = fill_banner(BANNER_TEXT_TEMPLATE, &cfg);
+        assert!(
+            text.contains("Test Researcher"),
+            "controller not substituted"
+        );
+        assert!(
+            text.contains("abuse@example.test"),
+            "abuse email not substituted"
+        );
+        assert!(!text.contains("{{"), "placeholders remain:\n{text}");
+
+        let html = fill_banner(BANNER_HTML_TEMPLATE, &cfg);
+        assert!(html.contains("Test Researcher"));
+        assert!(html.contains("abuse@example.test"));
+        assert!(!html.contains("{{"));
+        assert!(html.contains("mailto:abuse@example.test"));
+    }
+
+    #[test]
+    fn banner_marks_missing_operator_fields_as_unconfigured() {
+        let cfg = BannerConfig {
+            controller: "<operator not configured>".into(),
+            abuse_email: "<operator not configured>".into(),
+            contact: "research operator".into(),
+        };
+        let text = fill_banner(BANNER_TEXT_TEMPLATE, &cfg);
+        assert!(text.contains("<operator not configured>"));
+    }
+
+    #[test]
+    fn banner_accept_negotiation_prefers_plain_text_by_default() {
+        // `curl` default Accept: */* must not get HTML — we want operators doing
+        // a quick probe to see readable text.
+        let mut h = HeaderMap::new();
+        h.insert("accept", "*/*".parse().unwrap());
+        assert!(!client_accepts_html(&h));
+
+        h.insert("accept", "text/plain".parse().unwrap());
+        assert!(!client_accepts_html(&h));
+
+        h.insert(
+            "accept",
+            "text/html,application/xhtml+xml;q=0.9".parse().unwrap(),
+        );
+        assert!(client_accepts_html(&h));
+    }
 
     struct CapturingHandler {
         last_ctx: tokio::sync::Mutex<Option<RequestContext>>,
