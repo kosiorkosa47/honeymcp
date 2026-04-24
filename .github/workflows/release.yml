@@ -104,7 +104,7 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value "ASSET_SHA=$staging.zip.sha256"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: honeymcp-${{ matrix.target }}
           path: |
@@ -197,7 +197,7 @@ jobs:
           done
 
       - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sbom
           path: |
