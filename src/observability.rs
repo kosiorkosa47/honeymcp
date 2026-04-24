@@ -24,14 +24,26 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter, Registry};
 /// graceful shutdown. Inert when the OTEL feature is off.
 pub struct Guard {
     #[cfg(feature = "otel")]
-    _otel: Option<opentelemetry_sdk::trace::TracerProvider>,
+    otel: Option<opentelemetry_sdk::trace::TracerProvider>,
 }
 
 impl Guard {
     fn inert() -> Self {
         Self {
             #[cfg(feature = "otel")]
-            _otel: None,
+            otel: None,
+        }
+    }
+}
+
+impl Drop for Guard {
+    fn drop(&mut self) {
+        #[cfg(feature = "otel")]
+        if let Some(provider) = self.otel.take() {
+            // Best-effort flush of in-flight spans. Any failure here happens
+            // during process shutdown when the collector may already be gone,
+            // so swallowing is the right call.
+            let _ = provider.shutdown();
         }
     }
 }
@@ -88,7 +100,7 @@ fn install_with_format(filter: EnvFilter, kind: FormatKind) -> Result<Guard> {
             let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
             registry.with(telemetry).init();
             return Ok(Guard {
-                _otel: Some(tracer_provider),
+                otel: Some(tracer_provider),
             });
         }
     }
@@ -136,8 +148,12 @@ mod tests {
     fn guard_drop_is_inert_without_otel() {
         // Guard with no OTEL provider must be safe to drop exactly once, even
         // when the feature is off; this is the fast path we ship by default.
-        let g = Guard::inert();
-        drop(g);
+        // We let the binding fall out of scope rather than calling drop() so
+        // clippy does not flag a drop on a zero-sized type under default
+        // features.
+        {
+            let _g = Guard::inert();
+        }
     }
 
     #[test]

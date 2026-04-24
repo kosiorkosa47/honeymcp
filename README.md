@@ -179,6 +179,25 @@ make coverage     # lcov.info via cargo-llvm-cov
 make docker       # local image build
 ```
 
+### Optional feature flags
+
+Default build is SQLite + stderr logs, no external services. Two opt-in features:
+
+- `--features postgres` — Postgres backend via sqlx 0.8.6 (pgvector-ready). Pair with `docker compose up -d postgres && make db-migrate` for a local dev DB. Concrete backend wiring is still in progress; the feature currently compiles the scaffolding only.
+- `--features otel` — OpenTelemetry OTLP exporter. Spans are forwarded via gRPC/tonic to `OTEL_EXPORTER_OTLP_ENDPOINT` when set; the layer is not registered otherwise, so enabling the feature without setting the env var costs nothing.
+
+### Runtime env vars
+
+| Var | Effect |
+|---|---|
+| `RUST_LOG` | Standard `tracing` filter, default `info` |
+| `HONEYMCP_LOG_FORMAT` | `pretty` (default, human-readable stderr) or `json` (ndjson for Loki / Cloudwatch / Datadog) |
+| `HONEYMCP_BANNER_CONTROLLER` | Substituted into the banner served at `GET /` |
+| `HONEYMCP_BANNER_ABUSE_EMAIL` | Contact address on the banner (GDPR Art. 13/14 + Art. 17 channel) |
+| `HONEYMCP_BANNER_CONTACT` | Optional human contact name on the banner |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | gRPC OTLP collector URL (only with `--features otel`) |
+| `OTEL_SERVICE_NAME` | Overrides `service.name` resource; defaults to `honeymcp` |
+
 Contributions: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (security disclosure → [`SECURITY.md`](SECURITY.md)).
 
 ## Prior art & why honeymcp
