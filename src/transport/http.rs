@@ -1,14 +1,28 @@
-//! HTTP + SSE transport.
+//! HTTP transport.
 //!
-//! Implements the MCP "HTTP + Server-Sent Events" transport:
+//! The process speaks two overlapping wire shapes so anything an attacker aims at it
+//! gets captured cleanly:
 //!
-//! - `GET /sse` — opens a long-lived SSE stream for a session. The server first emits
-//!   an `event: endpoint` with a `data:` URL that tells the client where to POST. All
-//!   subsequent JSON-RPC responses for that session are written back to the SSE stream
-//!   as `event: message` frames.
-//! - `POST /message` — JSON-RPC request. Response is ALSO returned in the POST body
-//!   (so plain curl works), and, if an SSE stream is currently attached to the session,
-//!   a copy is dispatched there as well.
+//! ## Streamable HTTP (MCP spec 2025-06-18, current)
+//!
+//! - `POST /mcp` — JSON-RPC request. Response shape is content-negotiated:
+//!   - `Accept: text/event-stream` → a single-message SSE stream (the server emits the
+//!     response as one `event: message` frame, then closes).
+//!   - Anything else → `application/json` with the response inline.
+//! - `GET /mcp` — opens a long-lived server-to-client SSE stream for the session, for
+//!   out-of-band notifications. The session is identified by the `Mcp-Session-Id`
+//!   header (preferred) or the `session_id` query parameter (fallback).
+//! - The MCP protocol version travels in the `MCP-Protocol-Version` request header.
+//!   The server records it in `client_meta` for threat-intel but does NOT reject
+//!   missing or mismatched versions — bad headers are themselves a useful signal.
+//!
+//! ## HTTP + SSE (MCP spec 2024-11-05, deprecated 2025-03-26, kept for compatibility)
+//!
+//! - `GET /sse` — opens a long-lived SSE stream. First frame is `event: endpoint` with
+//!   the POST URL. Subsequent JSON-RPC responses for the session arrive as
+//!   `event: message` frames.
+//! - `POST /message` — JSON-RPC request. Response is echoed in the POST body AND, if
+//!   an SSE stream is attached to the session, forwarded there too.
 //!
 //! CORS is fully permissive on purpose — this is a honeypot and we want to entice
 //! browser-based attackers too.
@@ -23,7 +37,7 @@ use async_trait::async_trait;
 use axum::{
     body::Bytes,
     extract::{ConnectInfo, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::{self, HeaderMap, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
         IntoResponse, Response,
@@ -99,8 +113,49 @@ fn header_meta(headers: &HeaderMap) -> (Option<String>, Option<Value>) {
         .get("x-forwarded-for")
         .and_then(|v| v.to_str().ok())
         .map(String::from);
-    let client_meta = xff.map(|x| json!({ "x_forwarded_for": x }));
+    let mcp_proto = headers
+        .get("mcp-protocol-version")
+        .and_then(|v| v.to_str().ok())
+        .map(String::from);
+    let accept = headers
+        .get("accept")
+        .and_then(|v| v.to_str().ok())
+        .map(String::from);
+
+    let mut meta = serde_json::Map::new();
+    if let Some(x) = xff {
+        meta.insert("x_forwarded_for".into(), Value::String(x));
+    }
+    if let Some(v) = mcp_proto {
+        meta.insert("mcp_protocol_version".into(), Value::String(v));
+    }
+    if let Some(a) = accept {
+        meta.insert("accept".into(), Value::String(a));
+    }
+    let client_meta = if meta.is_empty() {
+        None
+    } else {
+        Some(Value::Object(meta))
+    };
     (ua, client_meta)
+}
+
+/// Decide the response shape requested by a client: inline JSON or an SSE single-message
+/// stream. Per MCP spec 2025-06-18, `Accept: text/event-stream` activates the SSE path.
+fn wants_event_stream(headers: &HeaderMap) -> bool {
+    headers
+        .get("accept")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|s| s.to_ascii_lowercase().contains("text/event-stream"))
+}
+
+fn remote_addr_from(headers: &HeaderMap, peer: SocketAddr) -> String {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next().map(|p| p.trim().to_string()))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| peer.to_string())
 }
 
 #[async_trait]
@@ -142,6 +197,7 @@ impl Transport for HttpTransport {
         // flood against /message.
         let message_routes = Router::new()
             .route("/message", post(message_handler))
+            .route("/mcp", post(mcp_post_handler).get(mcp_sse_handler))
             .layer(governor_layer)
             .layer(body_limit)
             .with_state(state.clone());
@@ -268,21 +324,10 @@ async fn message_handler(
         }
     };
 
-    // Prefer the first hop in X-Forwarded-For as the logged remote_addr when we're
-    // sitting behind a reverse proxy. The raw socket peer will be 127.0.0.1 in that
-    // case, which carries no threat-intel value. When the proxy is absent (or the
-    // caller connects directly to this process), `remote` is the real client peer.
-    let real_addr = headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next().map(|p| p.trim().to_string()))
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| remote.to_string());
-
     let ctx = RequestContext {
         session_id: session_id.clone(),
         transport: "http",
-        remote_addr: Some(real_addr),
+        remote_addr: Some(remote_addr_from(&headers, remote)),
         user_agent,
         client_meta,
     };
@@ -304,10 +349,139 @@ async fn message_handler(
     }
 }
 
+/// Streamable HTTP POST per MCP spec 2025-06-18.
+///
+/// Behaviour is identical to `/message` with two differences:
+/// - Response shape follows `Accept`: `text/event-stream` returns a single-message SSE
+///   stream; anything else returns plain `application/json`.
+/// - The `MCP-Protocol-Version` and `Accept` headers are recorded in `client_meta`
+///   alongside `x-forwarded-for`, so the dashboard / detectors can see what the client
+///   claimed to speak.
+///
+/// Missing or mismatched `MCP-Protocol-Version` is NOT rejected. A honeypot that
+/// returns HTTP 400 to malformed probes just teaches the attacker to avoid the trap.
+async fn mcp_post_handler(
+    Query(q): Query<SessionQuery>,
+    ConnectInfo(remote): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    body: Bytes,
+) -> Response {
+    let session_id = resolve_session_id(&q, &headers);
+    let (user_agent, client_meta) = header_meta(&headers);
+    let event_stream = wants_event_stream(&headers);
+
+    let req: JsonRpcRequest = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(e) => {
+            warn!(error = %e, "malformed JSON-RPC POST body on /mcp");
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32700, "message": format!("parse error: {e}")},
+                    "id": null
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let ctx = RequestContext {
+        session_id: session_id.clone(),
+        transport: "http",
+        remote_addr: Some(remote_addr_from(&headers, remote)),
+        user_agent,
+        client_meta,
+    };
+
+    let response = state.handler.handle_request(req, ctx).await;
+
+    let Some(resp) = response else {
+        // JSON-RPC notification: spec says 202 Accepted with no body. Do not promote
+        // this to an SSE frame even when the client asked for event-stream.
+        return (
+            StatusCode::ACCEPTED,
+            [(
+                "mcp-session-id",
+                http::HeaderValue::from_str(&session_id)
+                    .unwrap_or_else(|_| http::HeaderValue::from_static("")),
+            )],
+        )
+            .into_response();
+    };
+
+    let body = serde_json::to_string(&resp).unwrap_or_else(|_| "{}".to_string());
+
+    // Echo the response to any attached GET /mcp stream for the same session, so
+    // out-of-band subscribers see it too (mirrors the HTTP+SSE forwarding semantics).
+    if let Some(tx) = state.sessions.read().await.get(&session_id).cloned() {
+        let _ = tx.send(body.clone());
+    }
+
+    if event_stream {
+        // Single-shot SSE: one `message` event carrying the response, then close.
+        let body_for_stream = body.clone();
+        let stream = async_stream::stream! {
+            yield Ok::<_, std::convert::Infallible>(
+                Event::default().event("message").data(body_for_stream)
+            );
+        };
+        let sse = Sse::new(stream);
+        let mut resp = sse.into_response();
+        if let Ok(val) = http::HeaderValue::from_str(&session_id) {
+            resp.headers_mut().insert("mcp-session-id", val);
+        }
+        resp
+    } else {
+        let mut headers_out = axum::http::HeaderMap::new();
+        headers_out.insert(
+            "content-type",
+            http::HeaderValue::from_static("application/json"),
+        );
+        if let Ok(val) = http::HeaderValue::from_str(&session_id) {
+            headers_out.insert("mcp-session-id", val);
+        }
+        (StatusCode::OK, headers_out, body).into_response()
+    }
+}
+
+/// Streamable HTTP GET per MCP spec 2025-06-18: a server-to-client SSE channel for
+/// unsolicited notifications tied to a session. Session routing and lifecycle are
+/// identical to the legacy `/sse` handler; the only distinction is the URL.
+async fn mcp_sse_handler(
+    Query(q): Query<SessionQuery>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Sse<impl Stream<Item = std::result::Result<Event, std::convert::Infallible>>> {
+    let session_id = resolve_session_id(&q, &headers);
+    let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+
+    {
+        let mut sessions = state.sessions.write().await;
+        sessions.insert(session_id.clone(), tx);
+    }
+    debug!(session = %session_id, "/mcp sse subscriber attached");
+
+    let sessions_for_cleanup = state.sessions.clone();
+    let cleanup_id = session_id.clone();
+
+    let stream = async_stream::stream! {
+        while let Some(payload) = rx.recv().await {
+            yield Ok(Event::default().event("message").data(payload));
+        }
+        let mut sessions = sessions_for_cleanup.write().await;
+        sessions.remove(&cleanup_id);
+        debug!(session = %cleanup_id, "/mcp sse subscriber detached");
+    };
+
+    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::{JsonRpcRequest, JsonRpcResponse, RequestId};
+    use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
     use async_trait::async_trait;
 
     struct CapturingHandler {
@@ -322,10 +496,9 @@ mod tests {
             ctx: RequestContext,
         ) -> Option<JsonRpcResponse> {
             *self.last_ctx.lock().await = Some(ctx);
-            Some(JsonRpcResponse::ok(
-                req.id.unwrap_or(RequestId::Null),
-                serde_json::json!({"ok": true}),
-            ))
+            // Notifications (no `id`) get no response, same as the real server.
+            let id = req.id?;
+            Some(JsonRpcResponse::ok(id, serde_json::json!({"ok": true})))
         }
     }
 
@@ -367,9 +540,149 @@ mod tests {
         assert_eq!(ctx.user_agent.as_deref(), Some("honeypot-test/1.0"));
     }
 
+    // ---- Streamable HTTP (MCP spec 2025-06-18) ------------------------------
+
+    async fn spawn_app() -> (SocketAddr, Arc<CapturingHandler>) {
+        let handler = Arc::new(CapturingHandler {
+            last_ctx: tokio::sync::Mutex::new(None),
+        });
+        let state = AppState {
+            handler: handler.clone(),
+            stats: None,
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+        };
+        let app = Router::new()
+            .route("/message", post(message_handler))
+            .route("/mcp", post(mcp_post_handler).get(mcp_sse_handler))
+            .with_state(state);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            .unwrap();
+        });
+        (addr, handler)
+    }
+
+    #[tokio::test]
+    async fn streamable_http_post_returns_json_when_accept_is_application_json() {
+        let (addr, handler) = spawn_app().await;
+        let body = r#"{"jsonrpc":"2.0","method":"ping","id":1}"#;
+        let resp = raw_post(
+            &addr,
+            "/mcp",
+            body,
+            &[
+                ("Accept", "application/json"),
+                ("MCP-Protocol-Version", "2025-06-18"),
+                ("Mcp-Session-Id", "streamable-abc"),
+            ],
+        )
+        .await;
+        assert_eq!(resp.status, 200);
+        assert!(
+            resp.headers
+                .iter()
+                .any(|(k, v)| k.eq_ignore_ascii_case("content-type")
+                    && v.contains("application/json"))
+        );
+        assert!(resp
+            .headers
+            .iter()
+            .any(|(k, v)| k.eq_ignore_ascii_case("mcp-session-id") && v == "streamable-abc"));
+
+        let parsed: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
+        assert_eq!(parsed["result"]["ok"], true);
+
+        let ctx = handler.last_ctx.lock().await.clone().unwrap();
+        assert_eq!(ctx.session_id, "streamable-abc");
+        assert_eq!(ctx.transport, "http");
+        let meta = ctx.client_meta.unwrap();
+        assert_eq!(meta["mcp_protocol_version"], "2025-06-18");
+        assert_eq!(meta["accept"], "application/json");
+    }
+
+    #[tokio::test]
+    async fn streamable_http_post_returns_sse_when_accept_is_event_stream() {
+        let (addr, _handler) = spawn_app().await;
+        let body = r#"{"jsonrpc":"2.0","method":"ping","id":2}"#;
+        let resp = raw_post(
+            &addr,
+            "/mcp",
+            body,
+            &[
+                ("Accept", "text/event-stream"),
+                ("MCP-Protocol-Version", "2025-06-18"),
+            ],
+        )
+        .await;
+        assert_eq!(resp.status, 200);
+        assert!(resp
+            .headers
+            .iter()
+            .any(|(k, v)| k.eq_ignore_ascii_case("content-type")
+                && v.starts_with("text/event-stream")));
+        // SSE frame payload includes the JSON-RPC response on a `data:` line.
+        assert!(
+            resp.body.contains("event: message"),
+            "body did not contain SSE message frame: {:?}",
+            resp.body
+        );
+        assert!(
+            resp.body.contains("\"result\""),
+            "body did not contain JSON-RPC result: {:?}",
+            resp.body
+        );
+    }
+
+    #[tokio::test]
+    async fn streamable_http_post_notification_returns_202_no_body() {
+        let (addr, _handler) = spawn_app().await;
+        // JSON-RPC notification: no `id` field => handler returns None.
+        let body = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
+        let resp = raw_post(
+            &addr,
+            "/mcp",
+            body,
+            &[
+                ("Accept", "text/event-stream"),
+                ("MCP-Protocol-Version", "2025-06-18"),
+                ("Mcp-Session-Id", "notif-xyz"),
+            ],
+        )
+        .await;
+        assert_eq!(resp.status, 202);
+        assert!(resp.body.trim().is_empty(), "body was: {:?}", resp.body);
+        assert!(resp
+            .headers
+            .iter()
+            .any(|(k, v)| k.eq_ignore_ascii_case("mcp-session-id") && v == "notif-xyz"));
+    }
+
+    #[tokio::test]
+    async fn streamable_http_post_malformed_body_returns_json_rpc_parse_error() {
+        let (addr, _handler) = spawn_app().await;
+        let resp = raw_post(
+            &addr,
+            "/mcp",
+            "{not-json",
+            &[("Accept", "application/json")],
+        )
+        .await;
+        assert_eq!(resp.status, 400);
+        let parsed: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
+        assert_eq!(parsed["error"]["code"], -32700);
+    }
+
     struct HttpResp {
         status: u16,
         body: String,
+        headers: Vec<(String, String)>,
     }
 
     async fn reqwest_post(
@@ -378,25 +691,48 @@ mod tests {
         session: Option<&str>,
         ua: Option<&str>,
     ) -> HttpResp {
+        let mut extra: Vec<(&str, &str)> = Vec::new();
+        if let Some(s) = session {
+            extra.push(("Mcp-Session-Id", s));
+        }
+        if let Some(u) = ua {
+            extra.push(("User-Agent", u));
+        }
+        raw_post(addr, "/message", body, &extra).await
+    }
+
+    async fn raw_post(
+        addr: &SocketAddr,
+        path: &str,
+        body: &str,
+        extra_headers: &[(&str, &str)],
+    ) -> HttpResp {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
-        let session_hdr = session
-            .map(|s| format!("Mcp-Session-Id: {s}\r\n"))
-            .unwrap_or_default();
-        let ua_hdr = ua
-            .map(|u| format!("User-Agent: {u}\r\n"))
-            .unwrap_or_default();
+        let mut hdrs = String::new();
+        for (k, v) in extra_headers {
+            hdrs.push_str(&format!("{k}: {v}\r\n"));
+        }
         let req = format!(
-            "POST /message HTTP/1.1\r\n\
+            "POST {path} HTTP/1.1\r\n\
              Host: {addr}\r\n\
              Content-Type: application/json\r\n\
              Content-Length: {len}\r\n\
-             {session_hdr}{ua_hdr}Connection: close\r\n\r\n{body}",
+             {hdrs}Connection: close\r\n\r\n{body}",
             len = body.len()
         );
         stream.write_all(req.as_bytes()).await.unwrap();
         let mut buf = Vec::new();
-        stream.read_to_end(&mut buf).await.unwrap();
+
+        // Streamable-HTTP SSE responses keep the connection open until the stream
+        // terminates. Our single-shot `mcp_post_handler` closes after one frame,
+        // so the pre-existing read_to_end works; we just bound the wait so a bug
+        // doesn't hang the test harness.
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            stream.read_to_end(&mut buf),
+        )
+        .await;
         let text = String::from_utf8_lossy(&buf).to_string();
         let (head, body) = text.split_once("\r\n\r\n").unwrap_or((&text, ""));
         let first_line = head.lines().next().unwrap_or("");
@@ -405,9 +741,18 @@ mod tests {
             .nth(1)
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
+        let headers: Vec<(String, String)> = head
+            .lines()
+            .skip(1)
+            .filter_map(|line| {
+                line.split_once(':')
+                    .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+            })
+            .collect();
         HttpResp {
             status,
             body: body.to_string(),
+            headers,
         }
     }
 }

@@ -4,6 +4,26 @@
 
 ### Added
 
+- **Streamable HTTP transport** (MCP spec 2025-06-18, `POST /mcp` + `GET /mcp`).
+  The current MCP transport runs alongside the legacy HTTP+SSE flow:
+  - `POST /mcp` does Accept-header content negotiation. `Accept:
+    text/event-stream` gets a single-message SSE frame carrying the response;
+    everything else gets inline `application/json`. Notifications (no `id`)
+    return `202 Accepted` with no body, regardless of `Accept`.
+  - `GET /mcp` opens a long-lived server-to-client SSE stream for the session,
+    the same lifecycle as `/sse` but under the spec-current path.
+  - Session routing prefers the `Mcp-Session-Id` header; query parameter is
+    still honoured as a fallback. The response echoes `Mcp-Session-Id` back.
+  - `MCP-Protocol-Version` and `Accept` are now recorded in `client_meta`
+    alongside `x-forwarded-for`, so dashboard and detectors can see what the
+    client claimed to speak. Missing / mismatched protocol versions are NOT
+    rejected — a honeypot that returns 400 to malformed probes teaches the
+    attacker to avoid the trap.
+  - The legacy `/message` + `/sse` paths remain unchanged for clients still
+    on the 2024-11-05 spec.
+  - 4 new integration tests covering JSON vs SSE negotiation, notification
+    handling, and malformed body → JSON-RPC parse error.
+
 - **Repo scaffolding**: `rust-toolchain.toml` (pin 1.88.0), `deny.toml`, `Makefile`
   with `fmt` / `lint` / `test` / `audit` / `deny` / `coverage` / `docker` / `ci`
   targets, `.editorconfig`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` (Contributor
