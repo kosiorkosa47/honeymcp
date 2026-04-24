@@ -44,8 +44,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      # rust-toolchain.toml pins 1.89.0. Install that exact version plus the
+      # cross-compile target, otherwise rust-std for the target is missing
+      # when cargo reads the pinned channel and E0463 fires.
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.89.0"
           targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
