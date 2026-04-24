@@ -215,19 +215,23 @@ jobs:
       # Bulk `download-artifact@v4` against many artifacts is flaky on the
       # parallel blob-storage fetch; switch to per-artifact pulls with
       # merge-multiple so each download is its own retry domain.
+      #
+      # NOTE: build job uploads artifacts with name "honeymcp-<target>"
+      # (see line ~109 above), NOT "binary-<target>" -- a mismatched
+      # pattern here silently downloaded nothing and left the release
+      # missing binaries.
       - name: Download binary artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
-          pattern: binary-*
+          pattern: honeymcp-*
           merge-multiple: true
 
       - name: Download SBOM artifact
         uses: actions/download-artifact@v4
         with:
           path: dist
-          pattern: sbom
-          merge-multiple: true
+          name: sbom
 
       - name: Extract changelog for this version
         id: changelog
