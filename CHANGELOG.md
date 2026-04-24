@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-Everything below targets the next release tag (`v0.6.0-rc.1`).
+## [0.6.0-rc.1] - 2026-04-24
 
 ### Added - transport
 
