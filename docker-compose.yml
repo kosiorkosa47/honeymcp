@@ -1,4 +1,34 @@
 services:
+  # pgvector-flavoured Postgres for the `postgres` feature build and the
+  # analysis pipeline. Not required for a stock honeymcp deployment —
+  # start it only when you want the Postgres backend or embeddings.
+  #
+  #   docker compose up -d postgres
+  #   make db-migrate
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: honeymcp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: honeymcp
+      POSTGRES_PASSWORD: honeymcp_dev
+      POSTGRES_DB: honeymcp
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U honeymcp -d honeymcp"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   honeymcp:
     image: honeymcp:0.3.3
 

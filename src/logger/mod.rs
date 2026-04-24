@@ -3,6 +3,12 @@
 //! Writes each interaction to SQLite (primary) and optionally mirrors to JSONL (human-grep).
 //! The goal is to make threat-intel analysis trivial: `sqlite3 hive.db 'select ...'` or `jq`
 //! over the JSONL tail — no custom tooling required.
+//!
+//! Postgres backend is available under `--features postgres`; see the
+//! [`postgres`] module. Migrations live in `migrations/*.sql`.
+
+#[cfg(feature = "postgres")]
+pub mod postgres;
 
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
