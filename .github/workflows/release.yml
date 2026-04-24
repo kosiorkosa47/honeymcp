@@ -140,12 +140,17 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
+      # Multi-arch via QEMU takes ~30+ min because the Rust release build runs
+      # under arm64 emulation. Keep rc.* releases amd64-only so the cosign +
+      # SBOM smoke signal arrives in minutes, then re-enable linux/arm64 once
+      # the Dockerfile cross-compiles properly (rust:1.89-slim matches the
+      # rust-toolchain.toml pin, avoids the rustup-inside-container hit).
       - name: Build and push image
         id: push
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
