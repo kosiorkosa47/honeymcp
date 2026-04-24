@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/kosiorkosa47/honeymcp/security/advisories/new
+    about: Report a vulnerability in honeymcp privately. Do not open a public issue.
+  - name: Question or discussion
+    url: https://github.com/kosiorkosa47/honeymcp/discussions
+    about: Ask a question or discuss an idea before filing an issue.

@@ -10,6 +10,10 @@
 
 # Local tooling state, never commit
 .claude/
+.context-memory/
+.context-memory-backup-*/
+.local-plans/
+CLAUDE.md
 .cursor/
 .vscode/
 .idea/
