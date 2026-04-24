@@ -1,4 +1,4 @@
-# Threat Model — honeymcp
+# Threat Model - honeymcp
 
 This document describes how honeymcp can be misused or compromised, what is
 currently defended, and where the known gaps are. It is written for operators
@@ -27,26 +27,26 @@ recon, etc.) and persisted to SQLite and optionally a JSONL mirror.
 
 There are **three trust zones**:
 
-1. **Attacker** — unauthenticated internet client, potentially scripted.
-2. **Operator** — the human running the honeypot. Has the persona files,
+1. **Attacker** - unauthenticated internet client, potentially scripted.
+2. **Operator** - the human running the honeypot. Has the persona files,
    the database, and the host.
-3. **Consumer of threat intel** — later readers of the captured corpus.
+3. **Consumer of threat intel** - later readers of the captured corpus.
 
 honeymcp is designed so that attackers stay in zone 1 even when they
 successfully exercise the attack payloads we want to capture.
 
 ## 1. Data / secrets honeymcp itself handles
 
-- **Captured request payloads** — may contain attacker-supplied content that
+- **Captured request payloads** - may contain attacker-supplied content that
   looks like credentials (fake or real). honeymcp redacts aggressively when
   writing to logs (`src/bin/probes.rs::redact_secrets` applies the same
   patterns for outbound probe responses).
-- **Persona canned responses** — static, in repo or YAML. Should not contain
+- **Persona canned responses** - static, in repo or YAML. Should not contain
   real credentials. Operator responsibility.
-- **Remote address** — logged. Treated as personal data under GDPR (see
+- **Remote address** - logged. Treated as personal data under GDPR (see
   `docs/legal/privacy-gdpr-lia.md`).
-- **User-Agent + X-Forwarded-For** — logged alongside remote address.
-- **SQLite DB** — local file. Operator is the controller.
+- **User-Agent + X-Forwarded-For** - logged alongside remote address.
+- **SQLite DB** - local file. Operator is the controller.
 
 ## 2. STRIDE walkthrough
 
@@ -54,7 +54,7 @@ successfully exercise the attack payloads we want to capture.
 
 | Threat | Mitigation | Gap |
 |---|---|---|
-| Attacker impersonates a legitimate MCP client to bypass some logical check | No attempt at authentication; every client is assumed hostile | N/A — this is by design, we want all traffic |
+| Attacker impersonates a legitimate MCP client to bypass some logical check | No attempt at authentication; every client is assumed hostile | N/A - this is by design, we want all traffic |
 | Attacker spoofs `X-Forwarded-For` to poison the logged `remote_addr` | Trust is placed in the reverse proxy operator. Behind Caddy / nginx the first hop is authoritative. Direct-exposed deployments should NOT trust XFF | No per-deployment toggle. Operator must either run behind a trusted proxy or edit `src/transport/http.rs` to use raw peer |
 | Another process on the same host impersonates honeymcp on the same port | OS-level port binding; not distinct from any other TCP listener | Out of scope |
 
@@ -63,7 +63,7 @@ successfully exercise the attack payloads we want to capture.
 | Threat | Mitigation | Gap |
 |---|---|---|
 | Attacker modifies persona YAML to change honeymcp behaviour | Persona file is read from disk at startup, requires host access. No in-protocol way to update persona from a client session | N/A |
-| Attacker modifies SQLite DB to poison intel | Same — requires host access | In shared-tenancy deployments, DB file should be outside any network share |
+| Attacker modifies SQLite DB to poison intel | Same - requires host access | In shared-tenancy deployments, DB file should be outside any network share |
 | Supply-chain tampering of Rust crates | `cargo audit` + `cargo deny` in CI | `cargo vet` / `cargo crev` not yet configured |
 | Supply-chain tampering of container image | Multi-stage Dockerfile + distroless base; release images signed with cosign keyless (OIDC) and SBOM-attested | Users must actively run `cosign verify` before deploying |
 
@@ -72,7 +72,7 @@ successfully exercise the attack payloads we want to capture.
 | Threat | Mitigation | Gap |
 |---|---|---|
 | Attacker claims they never sent a request | Every request logged with timestamp, remote address, session id, client name/version, transport, SHA-256 of params, raw params | No tamper-evident append-only log (e.g. transparency-log style). DB owner can still redact history |
-| Operator claims the honeypot did not capture something | Same logging, plus optional JSONL mirror for independent grep | Operator owns both — consumers of the intel have to trust the operator |
+| Operator claims the honeypot did not capture something | Same logging, plus optional JSONL mirror for independent grep | Operator owns both - consumers of the intel have to trust the operator |
 
 ### 2.4 Information disclosure
 
@@ -81,7 +81,7 @@ and leaking the log back to the attacker is one of the worst failure modes.
 
 | Threat | Mitigation | Gap |
 |---|---|---|
-| Attacker drops a live credential into a tool call; honeymcp echoes it back in the JSON-RPC result | Response payloads are static from persona YAML; no echoing of request content | Detectors may surface matched content to the dashboard — **do not expose the dashboard to the public internet** |
+| Attacker drops a live credential into a tool call; honeymcp echoes it back in the JSON-RPC result | Response payloads are static from persona YAML; no echoing of request content | Detectors may surface matched content to the dashboard - **do not expose the dashboard to the public internet** |
 | Attacker triggers verbose error that leaks server stack / versions | axum default error handling kept, no debug bodies in production; `RUSTFLAGS: -D warnings` catches unintended debug prints | Error bodies for malformed JSON still include parser message; acceptable because it's JSON-RPC `-32700` boilerplate, but a hardened build could suppress |
 | Detection of honeymcp via banner / dashboard fingerprint | **Accepted leak.** A honeypot that hides its dashboard is a honeypot that silently mis-attributes real production traffic. We serve a documented research banner (`docs/legal/operator-banner.md`) at `GET /` | N/A |
 | Secrets in captured payloads leak to logs / stdout | `redact_secrets` replaces known tokens (GitHub PAT, AWS access keys, PEM keys, JWTs, Slack tokens) before writing response text | Request params stored raw for forensics; redaction only applies to responses and to probe outputs |
@@ -92,9 +92,9 @@ and leaking the log back to the attacker is one of the worst failure modes.
 
 | Threat | Mitigation | Gap |
 |---|---|---|
-| Single-IP flood against `POST /message` or `POST /mcp` | `tower_governor` per-IP token bucket: 2 req/s sustained, 20 burst | Distributed flood (botnet) not mitigated at app layer — push to the reverse proxy / Cloudflare |
+| Single-IP flood against `POST /message` or `POST /mcp` | `tower_governor` per-IP token bucket: 2 req/s sustained, 20 burst | Distributed flood (botnet) not mitigated at app layer - push to the reverse proxy / Cloudflare |
 | Memory exhaustion via oversized body | `RequestBodyLimitLayer` caps request body at 256 KiB | Very large streaming responses from persona not currently possible (persona is static), so no outbound cap needed |
-| ReDoS in detector regexes | Each detector regex is bounded (`{1,N}` quantifiers, no nested ambiguity) and compiled lazily. Unit tests cover adversarial inputs | Adding new detectors without regex review is the risk — see CONTRIBUTING.md checklist |
+| ReDoS in detector regexes | Each detector regex is bounded (`{1,N}` quantifiers, no nested ambiguity) and compiled lazily. Unit tests cover adversarial inputs | Adding new detectors without regex review is the risk - see CONTRIBUTING.md checklist |
 | SSE subscriber leak | `/sse` and `/mcp` GET evict on client disconnect; keep-alive every 15s | Long-lived connections from hostile clients could pile up. `tower_governor` applies to the initial GET so practical ceiling is ~20 concurrent SSE per IP |
 | Persistent-connection slow-loris via Streamable HTTP SSE | axum / hyper timeouts at the transport layer | No explicit per-connection write timeout; consider `tower-http::timeout` layer |
 
@@ -118,7 +118,7 @@ legal surface. See:
   `GET /`.
 
 The operator is the controller for any personal data captured (IP addresses,
-user-agents). The defaults err on the side of less collection — no payload
+user-agents). The defaults err on the side of less collection - no payload
 beyond what the attacker sent, no third-party trackers, no cloud analytics.
 
 ### 3.2 Use as an attack tool
@@ -130,7 +130,7 @@ self-scope, and does not refuse to talk to arbitrary targets.
 
 Contributions that turn honeymcp into a more general attack framework (e.g.
 persona-driven credential dumping from real upstream MCP servers, automatic
-spraying) will not be merged — see `CONTRIBUTING.md`.
+spraying) will not be merged - see `CONTRIBUTING.md`.
 
 ### 3.3 Shared-tenancy / collaborative research
 
@@ -155,7 +155,7 @@ Re-run the STRIDE pass when any of the following changes:
 - A new transport is added (e.g. WebSocket, HTTP/3, MQTT bridge).
 - A new detector category is introduced that might regex-match on response
   bodies rather than just request params.
-- The storage backend changes (SQLite → Postgres migration is planned).
+- The storage backend changes (SQLite -> Postgres migration is planned).
 - Any auth / session-state mechanism lands (currently stateless-per-session).
 - A new category of user-supplied input appears (e.g. operator-uploaded
   personas via web UI instead of file).

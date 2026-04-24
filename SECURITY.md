@@ -14,7 +14,7 @@ https://github.com/kosiorkosa47/honeymcp/security/advisories/new
 
 - Do **not** run it as a replacement for legitimate MCP servers on production endpoints.
 - Run with minimum privileges, in isolated environments (containers, VMs, dedicated user).
-- Never place real secrets or credentials in persona response text — personas are content served back to potential attackers.
+- Never place real secrets or credentials in persona response text - personas are content served back to potential attackers.
 - Log storage may contain attacker-supplied payloads; treat the database and JSONL files as untrusted input when processing downstream.
 
 ## Responsible Use

@@ -46,13 +46,13 @@ Thanks for your interest. honeymcp is an active open-source security research pr
 
 ## Development environment
 
-- Rust `1.83.0` (pinned via `rust-toolchain.toml`).
+- Rust `1.89.0` (pinned via `rust-toolchain.toml`).
 - Docker (for `docker-compose` local stack).
 - Optional: `cargo install cargo-audit cargo-deny cargo-llvm-cov`.
 
 ## Release process
 
-Maintainers cut releases via git tags (`vX.Y.Z-rc.N` → `vX.Y.Z`). Release workflow produces signed container images (cosign keyless) and an SBOM (Syft). Non-maintainers should not tag releases.
+Maintainers cut releases via git tags (`vX.Y.Z-rc.N` -> `vX.Y.Z`). Release workflow produces signed container images (cosign keyless) and an SBOM (Syft). Non-maintainers should not tag releases.
 
 ## Questions
 

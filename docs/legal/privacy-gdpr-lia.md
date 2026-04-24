@@ -52,7 +52,7 @@ The purpose cannot be achieved without:
    session, source IP, user-agent).
 
 Synthetic attack generation (e.g. running the included `honeymcp-probes`
-CLI against oneself) is not a substitute — the research value is in
+CLI against oneself) is not a substitute - the research value is in
 **what attackers choose to do unprompted**, which synthetic data cannot
 produce.
 
@@ -86,18 +86,18 @@ freedoms.
 
 Operators must be prepared to honour:
 
-- **Art. 13 / 14 — notice.** Served via `docs/legal/operator-banner.md`
+- **Art. 13 / 14 - notice.** Served via `docs/legal/operator-banner.md`
   at `GET /`.
-- **Art. 15 — access.** If a data subject identifies themselves by IP,
+- **Art. 15 - access.** If a data subject identifies themselves by IP,
   operator returns the matching rows or confirms absence.
-- **Art. 17 — erasure.** Default commitment in the banner is 30 days to
+- **Art. 17 - erasure.** Default commitment in the banner is 30 days to
   comply unless the record is part of an active investigation.
-- **Art. 21 — objection.** Because the lawful basis is Art. 6(1)(f), the
+- **Art. 21 - objection.** Because the lawful basis is Art. 6(1)(f), the
   data subject has the right to object. The operator must assess whether
   continued processing is justified by compelling legitimate grounds; in
   practice, for a non-targeted honeypot, honouring a specific-IP erasure
   request is the cleanest outcome.
-- **Art. 77 — complaint.** Data subjects may complain to their supervisory
+- **Art. 77 - complaint.** Data subjects may complain to their supervisory
   authority. The operator should not obstruct this.
 
 ## 5. Technical and organisational measures

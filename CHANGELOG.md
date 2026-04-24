@@ -4,7 +4,7 @@
 
 Everything below targets the next release tag (`v0.6.0-rc.1`).
 
-### Added — transport
+### Added - transport
 
 - **Streamable HTTP transport** (MCP spec 2025-06-18). The current MCP transport
   runs side by side with the legacy HTTP+SSE flow:
@@ -22,12 +22,12 @@ Everything below targets the next release tag (`v0.6.0-rc.1`).
   - `MCP-Protocol-Version` and `Accept` are now recorded in `client_meta`
     alongside `x-forwarded-for`, so dashboard and detectors can see what the
     client claimed to speak. Missing / mismatched protocol versions are NOT
-    rejected — a honeypot that returns 400 to malformed probes teaches the
+    rejected - a honeypot that returns 400 to malformed probes teaches the
     attacker to avoid the trap.
   - Legacy `/message` + `/sse` paths unchanged for clients still on the
     2024-11-05 spec.
 
-### Added — operator surface
+### Added - operator surface
 
 - **Operator banner at `GET /`.** Dashboard moves to `/dashboard`; the root now
   serves a research-honeypot disclosure (what is captured, why, how to request
@@ -39,7 +39,7 @@ Everything below targets the next release tag (`v0.6.0-rc.1`).
     `HONEYMCP_BANNER_ABUSE_EMAIL`, `HONEYMCP_BANNER_CONTACT` env vars.
     Missing vars fall back to `<operator not configured>` deliberately.
 
-### Added — release + supply chain
+### Added - release + supply chain
 
 - **Signed release workflow** (`.github/workflows/release.yml`). Triggered on
   `v*.*.*` and `v*.*.*-rc.*` tags, runs three jobs:
@@ -47,39 +47,39 @@ Everything below targets the next release tag (`v0.6.0-rc.1`).
     macOS x86_64 / aarch64, Windows x86_64), each packaged with LICENSE +
     README + CHANGELOG and a `.sha256`.
   - `container`: multi-arch GHCR image (`linux/amd64` + `linux/arm64`),
-    signed with cosign keyless (OIDC — no key stored in the repo), SBOM
+    signed with cosign keyless (OIDC - no key stored in the repo), SBOM
     generated via Syft in both SPDX and CycloneDX and attested to the image
     digest with `cosign attest`.
   - `publish`: extracts this CHANGELOG section as release notes and creates
     the GitHub Release, attaching binaries + SBOMs (prerelease=true for
     `-rc.*` tags).
   - Consumers verify with
-    `cosign verify ghcr.io/kosiorkosa47/honeymcp:vX.Y.Z --certificate-identity-regexp '…/honeymcp/.*' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'`.
+    `cosign verify ghcr.io/kosiorkosa47/honeymcp:vX.Y.Z --certificate-identity-regexp '.../honeymcp/.*' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'`.
 
-### Added — CI
+### Added - CI
 
 - New `deny` and `coverage` jobs in `.github/workflows/ci.yml`, on top of the
   existing `fmt` / `clippy` / `test (ubuntu + macos)` / `audit` suite. Five
   required checks now tell you which category broke at a glance. Coverage
   uploads `lcov.info` as a 14-day workflow artifact (no third-party token).
 
-### Added — documentation
+### Added - documentation
 
-- **`docs/threat-model.md`** — STRIDE walkthrough against the transport +
+- **`docs/threat-model.md`** - STRIDE walkthrough against the transport +
   detector layer. Per-category table of threat / current mitigation / known
   gap, plus a honeypot-specific section on operator legal exposure,
   use-as-attack-tool risk, and shared-tenancy concerns. Explicit
   out-of-scope list + review triggers.
-- **`docs/legal/operator-banner.md`** — plain-text + HTML templates of the
+- **`docs/legal/operator-banner.md`** - plain-text + HTML templates of the
   banner served at `GET /`, with the substitution placeholders and a
   what-not-to-change policy for deployments.
-- **`docs/legal/privacy-gdpr-lia.md`** — Legitimate Interest Assessment
+- **`docs/legal/privacy-gdpr-lia.md`** - Legitimate Interest Assessment
   under GDPR Art. 6(1)(f) + Recital 49. Captured-fields inventory, Art. 6
   three-part test, data-subject rights handling (Art. 13/14/15/17/21/77),
   TOM inventory, publication defaults (IP truncation to `/24` or `/48`
   before sharing derived datasets), operator signature block.
 
-### Added — observability
+### Added - observability
 
 - New `honeymcp::observability` module, single call at startup wires up the
   tracing stack. Two env knobs:
@@ -95,13 +95,13 @@ Everything below targets the next release tag (`v0.6.0-rc.1`).
   shutdown; dropping it flushes the OTLP exporter so in-flight spans are
   not lost on graceful exit.
 
-### Added — storage scaffolding
+### Added - storage scaffolding
 
 - Optional Postgres backend behind `--features postgres` (sqlx 0.8.6,
   postgres-only features to avoid a libsqlite3-sys collision with
-  rusqlite's bundled copy). Default build is unchanged — SQLite + JSONL
+  rusqlite's bundled copy). Default build is unchanged - SQLite + JSONL
   remains the only storage path without the feature flag.
-- `migrations/20260424_0001_init.sql` / `_0002_pgvector.sql` — schema
+- `migrations/20260424_0001_init.sql` / `_0002_pgvector.sql` - schema
   (sessions, events, detections, personas_snapshot) + pgvector HNSW
   index for 384-dim sentence-transformer embeddings.
 - `docker compose up -d postgres` starts `pgvector/pgvector:pg16` bound
@@ -111,9 +111,9 @@ Everything below targets the next release tag (`v0.6.0-rc.1`).
   "not implemented yet" so no `postgres://` URL accidentally routes
   into the void. Concrete backend lands in a follow-up commit.
 
-### Added — repo scaffolding
+### Added - repo scaffolding
 
-- `rust-toolchain.toml` pin (1.89.0 — needs to be ≥ 1.89 for `cargo-audit`
+- `rust-toolchain.toml` pin (1.89.0 - needs to be >= 1.89 for `cargo-audit`
   to compile), `deny.toml` with licence allow-list tuned to the actual
   dependency tree, `Makefile` (`fmt` / `lint` / `test` / `audit` / `deny` /
   `coverage` / `docker` / `ci` / `clean`), `.editorconfig`,
@@ -124,14 +124,14 @@ Everything below targets the next release tag (`v0.6.0-rc.1`).
 
 ### Security
 
-- Bumped `rustls-webpki` 0.103.12 → 0.103.13 to pick up the fix for
+- Bumped `rustls-webpki` 0.103.12 -> 0.103.13 to pick up the fix for
   RUSTSEC-2026-0104 (reachable panic in CRL parsing, advisory published
-  2026-04-22). Transitive via `reqwest` → `rustls` → `rustls-webpki`.
+  2026-04-22). Transitive via `reqwest` -> `rustls` -> `rustls-webpki`.
 
 ### Testing
 
-- `transport::http` coverage grew from 1 → 10 integration tests: legacy
-  `POST /message`, Streamable `POST /mcp` JSON, SSE, notification → 202,
+- `transport::http` coverage grew from 1 -> 10 integration tests: legacy
+  `POST /message`, Streamable `POST /mcp` JSON, SSE, notification -> 202,
   malformed-body parse error, `DELETE /mcp` for known and unknown sessions,
   banner placeholder substitution, Accept-header negotiation.
 

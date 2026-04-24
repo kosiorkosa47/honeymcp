@@ -210,7 +210,7 @@ Default build is SQLite + stderr logs, no external services. Two opt-in features
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | gRPC OTLP collector URL (only with `--features otel`) |
 | `OTEL_SERVICE_NAME` | Overrides `service.name` resource; defaults to `honeymcp` |
 
-Contributions: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (security disclosure → [`SECURITY.md`](SECURITY.md)).
+Contributions: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (security disclosure -> [`SECURITY.md`](SECURITY.md)).
 
 ## Prior art & why honeymcp
 
@@ -230,7 +230,7 @@ Working target: `v1.0.0-rc.1` on a 28-day sprint.
 |------|-------|--------|
 | 1 - Foundation | stdio + Streamable HTTP + legacy HTTP+SSE, 7 detectors, CI (fmt + clippy + test matrix + audit + deny + coverage), signed release workflow, threat model + GDPR LIA | ✅ shipped |
 | 2 - Infrastructure | Postgres + pgvector backend, Terraform module set, multi-region deploy (EKS central + k3s edges), observability stack | in progress |
-| 3 - Analysis | Embeddings pipeline, rule + LLM classifier against OWASP T1–T15, HDBSCAN clustering, weekly report generator | pending |
+| 3 - Analysis | Embeddings pipeline, rule + LLM classifier against OWASP T1-T15, HDBSCAN clustering, weekly report generator | pending |
 | 4 - Dashboard + v1.0 | Web dashboard (live feed + clusters + reports), STIX 2.1 export, landing page, security hardening, cut `v1.0.0-rc.1` | pending |
 
 ## Verify a release

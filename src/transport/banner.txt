@@ -1,4 +1,4 @@
-honeymcp — research honeypot
+honeymcp - research honeypot
 ============================
 
 You are talking to a honeypot that simulates the Model Context Protocol

@@ -16,14 +16,14 @@ The intent is twofold:
 
 Operators are expected to edit the `{{CONTROLLER}}` / `{{CONTACT}}` / `{{ABUSE_EMAIL}}`
 placeholders to reflect their own entity. The banner text is intentionally
-plain — not marketing copy, not clever.
+plain - not marketing copy, not clever.
 
 ---
 
 ## Plain-text version (served as `content-type: text/plain`)
 
 ```
-honeymcp — research honeypot
+honeymcp - research honeypot
 ============================
 
 You are talking to a honeypot that simulates the Model Context Protocol
@@ -80,7 +80,7 @@ real attacker behaviour against MCP, nothing more.
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>honeymcp — research honeypot</title>
+<title>honeymcp - research honeypot</title>
 <meta name="robots" content="noindex, nofollow">
 <style>
   body { font: 15px/1.5 -apple-system, system-ui, sans-serif; max-width: 680px;
@@ -97,7 +97,7 @@ real attacker behaviour against MCP, nothing more.
 </head>
 <body>
 
-<h1>honeymcp — research honeypot</h1>
+<h1>honeymcp - research honeypot</h1>
 
 <p>You are talking to a honeypot that simulates the
 <a href="https://spec.modelcontextprotocol.io/">Model Context Protocol</a>
@@ -160,6 +160,6 @@ attacker behaviour against MCP, nothing more.</p>
 - The description of what is captured. If your deployment captures more,
   say so here. Do not capture more and omit the disclosure.
 - The 30-day GDPR Art. 17 commitment. If you need longer for active
-  incidents, say so on reply — do not quietly miss the deadline.
+  incidents, say so on reply - do not quietly miss the deadline.
 - The `noindex, nofollow` meta in the HTML version. The banner is not
   for SEO; indexing it would poison the honeypot signal.
