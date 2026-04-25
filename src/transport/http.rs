@@ -215,6 +215,7 @@ impl Transport for HttpTransport {
             .route("/sse", get(sse_handler))
             .route("/stats", get(stats_handler))
             .route("/dashboard", get(dashboard_handler))
+            .route("/version", get(version_handler))
             .route("/", get(banner_handler))
             .route("/healthz", get(|| async { "ok" }))
             .layer(cors)
@@ -328,6 +329,34 @@ async fn banner_handler(headers: HeaderMap) -> Response {
         )
             .into_response()
     }
+}
+
+/// Build-time provenance stamped by `build.rs`. Surfaced verbatim at `/version` so
+/// an operator can `curl /version` after a deploy and prove what is actually live
+/// without trusting the docker tag or release name. The git sha picks up a
+/// `-dirty` suffix when the working tree had uncommitted changes at build time;
+/// any production binary should never carry that suffix.
+const BUILD_GIT_SHA: &str = env!("HONEYMCP_GIT_SHA");
+const BUILD_UNIX_TS: &str = env!("HONEYMCP_BUILD_UNIX_TS");
+
+async fn version_handler() -> Response {
+    let unix_ts: i64 = BUILD_UNIX_TS.parse().unwrap_or(0);
+    let build_time_utc = time::OffsetDateTime::from_unix_timestamp(unix_ts)
+        .ok()
+        .and_then(|t| {
+            t.format(&time::format_description::well_known::Rfc3339)
+                .ok()
+        })
+        .unwrap_or_else(|| "unknown".to_string());
+
+    Json(json!({
+        "name": env!("CARGO_PKG_NAME"),
+        "version": env!("CARGO_PKG_VERSION"),
+        "git_sha": BUILD_GIT_SHA,
+        "build_time_utc": build_time_utc,
+        "build_unix_ts": unix_ts,
+    }))
+    .into_response()
 }
 
 async fn stats_handler(State(state): State<AppState>) -> Response {
@@ -847,6 +876,83 @@ mod tests {
         assert_eq!(resp.status, 400);
         let parsed: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
         assert_eq!(parsed["error"]["code"], -32700);
+    }
+
+    #[tokio::test]
+    async fn version_endpoint_reports_build_provenance() {
+        let app = Router::new().route("/version", get(version_handler));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            .unwrap();
+        });
+
+        let resp = raw_get(&addr, "/version", &[]).await;
+        assert_eq!(resp.status, 200);
+        let parsed: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
+        assert_eq!(parsed["name"], env!("CARGO_PKG_NAME"));
+        assert_eq!(parsed["version"], env!("CARGO_PKG_VERSION"));
+        // git_sha should be a 12-hex-char short sha (optionally with -dirty),
+        // never the empty string. Falls back to "unknown" outside a git tree;
+        // tests run from inside the repo so we expect a real sha here.
+        let sha = parsed["git_sha"].as_str().unwrap();
+        assert!(!sha.is_empty(), "git_sha empty");
+        // build_unix_ts should be a positive integer; build_time_utc should
+        // round-trip back to the same instant via RFC3339 parsing.
+        let ts = parsed["build_unix_ts"].as_i64().unwrap();
+        assert!(ts > 0, "build_unix_ts not stamped");
+        let utc = parsed["build_time_utc"].as_str().unwrap();
+        assert!(
+            utc.contains('T') && utc.ends_with('Z'),
+            "not RFC3339: {utc}"
+        );
+    }
+
+    async fn raw_get(addr: &SocketAddr, path: &str, extra_headers: &[(&str, &str)]) -> HttpResp {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let mut hdrs = String::new();
+        for (k, v) in extra_headers {
+            hdrs.push_str(&format!("{k}: {v}\r\n"));
+        }
+        let req = format!(
+            "GET {path} HTTP/1.1\r\n\
+             Host: {addr}\r\n\
+             {hdrs}Connection: close\r\n\r\n"
+        );
+        stream.write_all(req.as_bytes()).await.unwrap();
+        let mut buf = Vec::new();
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            stream.read_to_end(&mut buf),
+        )
+        .await;
+        let text = String::from_utf8_lossy(&buf).to_string();
+        let (head, body) = text.split_once("\r\n\r\n").unwrap_or((&text, ""));
+        let first_line = head.lines().next().unwrap_or("");
+        let status = first_line
+            .split_whitespace()
+            .nth(1)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        let headers: Vec<(String, String)> = head
+            .lines()
+            .skip(1)
+            .filter_map(|line| {
+                line.split_once(':')
+                    .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+            })
+            .collect();
+        HttpResp {
+            status,
+            body: body.to_string(),
+            headers,
+        }
     }
 
     #[tokio::test]
