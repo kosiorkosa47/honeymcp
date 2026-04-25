@@ -2,8 +2,11 @@
 FROM rust:1.89-slim-bookworm AS builder
 WORKDIR /build
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock build.rs ./
 COPY src ./src
+# build.rs reads .git/HEAD if present to stamp HONEYMCP_GIT_SHA. The build
+# context here usually has no .git tree, so the script falls back to "unknown"
+# at compile time. Release builds populate it via CI env (see release.yml).
 RUN cargo build --release --locked
 
 FROM debian:bookworm-slim
