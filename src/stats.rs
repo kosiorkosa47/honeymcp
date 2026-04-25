@@ -31,11 +31,16 @@ pub struct StatsSnapshot {
     pub detections_by_category: Vec<(String, i64)>,
     pub unique_remote_addrs_24h: i64,
     pub top_tools: Vec<(String, i64)>,
+    /// True iff operator-tagged events were folded into the counts above.
+    /// The default `/stats` response excludes operator traffic, so any
+    /// number a third party reads here reflects the external corpus only.
+    /// Pass `?include_operator=true` to flip this to true.
+    pub operator_traffic_included: bool,
 }
 
 #[async_trait]
 pub trait StatsProvider: Send + Sync {
-    async fn stats(&self) -> Result<StatsSnapshot>;
+    async fn stats(&self, include_operator: bool) -> Result<StatsSnapshot>;
 }
 
 pub struct LoggerStatsProvider {
@@ -64,7 +69,7 @@ impl LoggerStatsProvider {
 
 #[async_trait]
 impl StatsProvider for LoggerStatsProvider {
-    async fn stats(&self) -> Result<StatsSnapshot> {
+    async fn stats(&self, include_operator: bool) -> Result<StatsSnapshot> {
         let now_ms = crate::logger::now_ms();
         let day_ago_ms = now_ms - 24 * 60 * 60 * 1000;
 
@@ -75,12 +80,16 @@ impl StatsProvider for LoggerStatsProvider {
                 version: self.server.version.clone(),
                 protocol_version: self.server.protocol_version,
             },
-            total_events: self.logger.count_events().await?,
-            total_detections: self.logger.count_detections().await?,
-            events_by_method: self.logger.events_by_method().await?,
-            detections_by_category: self.logger.detections_by_category().await?,
-            unique_remote_addrs_24h: self.logger.unique_remote_addrs_since(day_ago_ms).await?,
-            top_tools: self.logger.top_tools(10).await?,
+            total_events: self.logger.count_events(include_operator).await?,
+            total_detections: self.logger.count_detections(include_operator).await?,
+            events_by_method: self.logger.events_by_method(include_operator).await?,
+            detections_by_category: self.logger.detections_by_category(include_operator).await?,
+            unique_remote_addrs_24h: self
+                .logger
+                .unique_remote_addrs_since(day_ago_ms, include_operator)
+                .await?,
+            top_tools: self.logger.top_tools(10, include_operator).await?,
+            operator_traffic_included: include_operator,
         })
     }
 }

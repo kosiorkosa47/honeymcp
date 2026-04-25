@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 use tracing::{debug, info, instrument, warn};
 
 use crate::detect::{DetectionContext, Registry, SessionStats};
-use crate::logger::{hash_params, now_ms, LogEntry, Logger};
+use crate::logger::{hash_params, now_ms, LogEntry, Logger, OperatorClassifier};
 use crate::persona::Persona;
 use crate::protocol::{
     ErrorCode, InitializeParams, InitializeResult, JsonRpcError, JsonRpcRequest, JsonRpcResponse,
@@ -35,6 +35,7 @@ pub struct Dispatcher {
     persona: Arc<Persona>,
     logger: Logger,
     registry: Arc<Registry>,
+    operator: OperatorClassifier,
     sessions: Mutex<HashMap<String, Arc<Mutex<SessionState>>>>,
 }
 
@@ -44,10 +45,25 @@ impl Dispatcher {
     }
 
     pub fn with_registry(persona: Persona, logger: Logger, registry: Registry) -> Self {
+        Self::with_registry_and_classifier(
+            persona,
+            logger,
+            registry,
+            OperatorClassifier::from_env(),
+        )
+    }
+
+    pub fn with_registry_and_classifier(
+        persona: Persona,
+        logger: Logger,
+        registry: Registry,
+        operator: OperatorClassifier,
+    ) -> Self {
         Self {
             persona: Arc::new(persona),
             logger,
             registry: Arc::new(registry),
+            operator,
             sessions: Mutex::new(HashMap::new()),
         }
     }
@@ -184,6 +200,11 @@ impl Dispatcher {
         state: &SessionState,
     ) {
         let ts = now_ms();
+        let is_operator = self.operator.classify(
+            ctx.user_agent.as_deref(),
+            ctx.remote_addr.as_deref(),
+            ctx.client_meta.as_ref(),
+        );
         let entry = LogEntry {
             timestamp_ms: ts,
             method: req.method.clone(),
@@ -197,6 +218,7 @@ impl Dispatcher {
             remote_addr: ctx.remote_addr.clone(),
             user_agent: ctx.user_agent.clone(),
             client_meta: ctx.client_meta.clone(),
+            is_operator,
         };
 
         let event_id = match self.logger.record(&entry).await {
@@ -352,7 +374,7 @@ tools:
         let state = d.session_state(&ctx.session_id).await;
         let state = state.lock().await;
         assert_eq!(state.client_name.as_deref(), Some("attacker"));
-        assert_eq!(d.logger.count_events().await.unwrap(), 1);
+        assert_eq!(d.logger.count_events(true).await.unwrap(), 1);
     }
 
     #[tokio::test]

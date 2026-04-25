@@ -359,9 +359,19 @@ async fn version_handler() -> Response {
     .into_response()
 }
 
-async fn stats_handler(State(state): State<AppState>) -> Response {
+/// Query string for `/stats`. Default behaviour excludes operator traffic
+/// (probes, validation curls, allowlisted operator IPs) so any third party
+/// reading the JSON sees the external-only corpus. Pass `?include_operator=true`
+/// to fold operator events back in for debugging or capacity planning.
+#[derive(Debug, Deserialize, Default)]
+struct StatsQuery {
+    #[serde(default)]
+    include_operator: bool,
+}
+
+async fn stats_handler(Query(q): Query<StatsQuery>, State(state): State<AppState>) -> Response {
     match state.stats {
-        Some(provider) => match provider.stats().await {
+        Some(provider) => match provider.stats(q.include_operator).await {
             Ok(snap) => (StatusCode::OK, Json(snap)).into_response(),
             Err(e) => {
                 warn!(error = %e, "stats query failed");
