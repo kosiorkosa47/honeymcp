@@ -19,7 +19,7 @@
 
 I built honeymcp because there's no public record of what attackers actually send to MCP servers. The protocol is a year old, products using it ship weekly, and the usual web threat feeds don't cover this layer yet. So I wrote the sensor that collects it.
 
-It's one Rust binary. About 15 MB, SQLite on disk, fits in 256 MiB of RAM. You run it, point DNS, and it answers MCP handshakes the way a real server would. Personas are YAML. You pick one (I ship `postgres-admin` and `github-admin`) and anyone scanning the internet for MCP endpoints gets a full conversation with fake tools and canned responses.
+It's one Rust binary. About 15 MB, SQLite on disk, fits in 256 MiB of RAM. You run it, point DNS, and it answers MCP handshakes the way a real server would. Personas are YAML. I ship four out of the box (`postgres-admin`, `github-admin`, `vercel-admin`, `stripe-finance`) covering the surfaces attackers actually go after: source code, deployments, environment variables, financial data. Anyone scanning the internet for MCP endpoints gets a full conversation with fake tools and canned responses that hold up under multi-turn interrogation.
 
 What lands in SQLite: timestamp, method, IP, User-Agent, client name and version, the `Mcp-Session-Id` they used, the `MCP-Protocol-Version` they claimed, and a SHA-256 of the raw params so reruns correlate. Seven detectors tag events at write time, so you can grep for "prompt-injection traffic that also did tool-enumeration" without scanning the whole DB.
 
