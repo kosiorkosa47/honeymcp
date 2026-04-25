@@ -5,6 +5,7 @@
 # honeymcp
 
 [![CI](https://github.com/kosiorkosa47/honeymcp/actions/workflows/ci.yml/badge.svg)](https://github.com/kosiorkosa47/honeymcp/actions)
+[![codecov](https://codecov.io/gh/kosiorkosa47/honeymcp/branch/main/graph/badge.svg)](https://codecov.io/gh/kosiorkosa47/honeymcp)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
 
