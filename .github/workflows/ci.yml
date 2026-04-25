@@ -164,3 +164,5 @@ jobs:
           files: lcov.info
           flags: rust
           name: honeymcp-coverage
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
