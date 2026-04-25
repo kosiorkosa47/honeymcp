@@ -24,7 +24,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter, Registry};
 /// graceful shutdown. Inert when the OTEL feature is off.
 pub struct Guard {
     #[cfg(feature = "otel")]
-    otel: Option<opentelemetry_sdk::trace::TracerProvider>,
+    otel: Option<opentelemetry_sdk::trace::SdkTracerProvider>,
 }
 
 impl Guard {
@@ -96,7 +96,8 @@ fn install_with_format(filter: EnvFilter, kind: FormatKind) -> Result<Guard> {
     #[cfg(feature = "otel")]
     {
         if let Some(tracer_provider) = try_build_otlp_provider()? {
-            let tracer = opentelemetry::trace::TracerProvider::tracer(&tracer_provider, "honeymcp");
+            use opentelemetry::trace::TracerProvider as _;
+            let tracer = tracer_provider.tracer("honeymcp");
             let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
             registry.with(telemetry).init();
             return Ok(Guard {
@@ -110,10 +111,10 @@ fn install_with_format(filter: EnvFilter, kind: FormatKind) -> Result<Guard> {
 }
 
 #[cfg(feature = "otel")]
-fn try_build_otlp_provider() -> Result<Option<opentelemetry_sdk::trace::TracerProvider>> {
+fn try_build_otlp_provider() -> Result<Option<opentelemetry_sdk::trace::SdkTracerProvider>> {
     use opentelemetry::KeyValue;
     use opentelemetry_otlp::WithExportConfig;
-    use opentelemetry_sdk::{runtime, trace, Resource};
+    use opentelemetry_sdk::{trace::SdkTracerProvider, Resource};
 
     let endpoint = match std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
         Ok(v) if !v.is_empty() => v,
@@ -128,12 +129,17 @@ fn try_build_otlp_provider() -> Result<Option<opentelemetry_sdk::trace::TracerPr
         .with_endpoint(endpoint)
         .build()?;
 
-    let provider = trace::TracerProvider::builder()
-        .with_batch_exporter(exporter, runtime::Tokio)
-        .with_resource(Resource::new(vec![KeyValue::new(
-            "service.name",
-            service_name,
-        )]))
+    // 0.31 SDK: Resource is built via the builder API; new() is private.
+    // The TracerProvider type was renamed to SdkTracerProvider, and the
+    // BatchSpanProcessor no longer takes an explicit runtime argument
+    // (tokio is detected via the rt-tokio feature gate).
+    let resource = Resource::builder()
+        .with_attribute(KeyValue::new("service.name", service_name))
+        .build();
+
+    let provider = SdkTracerProvider::builder()
+        .with_batch_exporter(exporter)
+        .with_resource(resource)
         .build();
 
     opentelemetry::global::set_tracer_provider(provider.clone());
