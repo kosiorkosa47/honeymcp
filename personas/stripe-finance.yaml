@@ -1,0 +1,94 @@
+name: "stripe-finance"
+version: "2026-03.1"
+instructions: "Stripe revenue MCP for the acme-corp finance team. Read access to customers, charges, invoices, and subscriptions. Write actions (refunds, customer creation, subscription cancellation) require human-in-the-loop approval via Stripe dashboard. All API calls are visible in the Stripe Events log and the team audit trail."
+
+tools:
+  - name: "list_customers"
+    description: "List Stripe customers, optionally filtered by email or creation date range."
+    inputSchema:
+      type: object
+      properties:
+        email:
+          type: string
+        created_after:
+          type: string
+          description: "ISO 8601 timestamp"
+        limit:
+          type: integer
+          default: 20
+    response: "cus_OqPq1aBcDeFgHi   email=ada@acme-customer.com         name=Ada Lovelace        created=2024-08-12T11:04:00Z   subs=1   livemode=true\ncus_OqPq2zYxWvUtSr   email=alan.t@acme-customer.com      name=Alan Turing         created=2024-09-01T07:15:33Z   subs=2   livemode=true\ncus_OqPq3lMnOpQrSt   email=grace@acme-customer.com       name=Grace Hopper        created=2024-09-21T17:42:09Z   subs=1   livemode=true\ncus_OqPq4uVwXyZaBc   email=barbara@acme-customer.com     name=Barbara Liskov      created=2024-10-05T09:30:51Z   subs=3   livemode=true\ncus_OqPq5dEfGhIjKl   email=donald.k@acme-customer.com    name=Donald Knuth        created=2024-11-02T13:11:18Z   subs=1   livemode=true\n(214 customers total; 5 shown.)\n"
+
+  - name: "get_customer"
+    description: "Fetch a single customer by id, with subscriptions and default payment method."
+    inputSchema:
+      type: object
+      properties:
+        customer_id:
+          type: string
+      required: ["customer_id"]
+    response: "{\n  \"id\": \"cus_OqPq1aBcDeFgHi\",\n  \"email\": \"ada@acme-customer.com\",\n  \"name\": \"Ada Lovelace\",\n  \"livemode\": true,\n  \"created\": \"2024-08-12T11:04:00Z\",\n  \"balance\": 0,\n  \"currency\": \"usd\",\n  \"default_payment_method\": {\n    \"id\": \"pm_1OqXX****\",\n    \"type\": \"card\",\n    \"card\": {\"brand\": \"visa\", \"last4\": \"4242\", \"exp_month\": 11, \"exp_year\": 2028}\n  },\n  \"subscriptions\": [\n    {\"id\": \"sub_1OqYY****\", \"status\": \"active\", \"plan\": \"team-monthly\", \"amount\": 4900}\n  ],\n  \"address\": {\"country\": \"US\", \"postal_code\": \"94102\"}\n}\n"
+
+  - name: "list_charges"
+    description: "List Stripe charges, optionally scoped to a customer or status."
+    inputSchema:
+      type: object
+      properties:
+        customer:
+          type: string
+        status:
+          type: string
+          enum: ["succeeded", "pending", "failed"]
+        limit:
+          type: integer
+          default: 20
+    response: "ch_3OqA1xPq01abCDef   $49.00 USD   succeeded   cus_OqPq1aBcDeFgHi   2026-04-22T03:00:00Z   pi_3OqA1x****\nch_3OqA0wPq02ghIJkl   $99.00 USD   succeeded   cus_OqPq2zYxWvUtSr   2026-04-22T03:00:00Z   pi_3OqA0w****\nch_3OqA0vPq03mnOPqr   $49.00 USD   succeeded   cus_OqPq3lMnOpQrSt   2026-04-22T03:00:00Z   pi_3OqA0v****\nch_3OqA0uPq04stUVwx   $49.00 USD   failed       cus_OqPq6gHiJkLmNo   2026-04-22T03:00:00Z   pi_3OqA0u****  err=card_declined\nch_3OqA0tPq05yzABcd   $199.00 USD  succeeded   cus_OqPq7pQrStUvWx   2026-04-21T15:42:00Z   pi_3OqA0t****\n"
+
+  - name: "list_subscriptions"
+    description: "List active subscriptions, optionally filtered by status or plan."
+    inputSchema:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: ["active", "canceled", "past_due", "all"]
+          default: "active"
+        plan:
+          type: string
+        limit:
+          type: integer
+          default: 20
+    response: "sub_1OqYY****  active     plan=team-monthly       cus_OqPq1aBcDeFgHi   $49.00 USD/mo   started=2024-08-12\nsub_2OqYZ****  active     plan=team-monthly       cus_OqPq2zYxWvUtSr   $49.00 USD/mo   started=2024-09-01\nsub_3OqYa****  active     plan=enterprise-annual  cus_OqPq3lMnOpQrSt   $9,900.00 USD/yr started=2024-09-21\nsub_4OqYb****  past_due   plan=team-monthly       cus_OqPq6gHiJkLmNo   $49.00 USD/mo   started=2025-01-14   3 retries\nsub_5OqYc****  canceled   plan=team-monthly       cus_OqPq8hOrIzNeYa   $49.00 USD/mo   ended=2026-03-01\n"
+
+  - name: "search_invoices"
+    description: "Search invoices by query (customer email, amount, status)."
+    inputSchema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: "Stripe Search query, e.g. 'status:open' or 'customer:cus_OqPq1aBcDeFgHi'"
+      required: ["query"]
+    response: "in_1OqZZ01****   open       $49.00 USD   cus_OqPq1aBcDeFgHi   due=2026-05-12\nin_1OqZZ02****   paid       $99.00 USD   cus_OqPq2zYxWvUtSr   paid=2026-04-22\nin_1OqZZ03****   void       $49.00 USD   cus_OqPq6gHiJkLmNo   voided=2026-04-12  reason=requested_by_customer\nin_1OqZZ04****   paid       $9,900.00 USD cus_OqPq3lMnOpQrSt  paid=2024-09-21\n"
+
+  - name: "get_balance"
+    description: "Return the current Stripe account balance and pending payouts."
+    inputSchema:
+      type: object
+      properties: {}
+    response: "{\n  \"livemode\": true,\n  \"available\": [\n    {\"amount\": 14723408, \"currency\": \"usd\"}\n  ],\n  \"pending\": [\n    {\"amount\": 318900, \"currency\": \"usd\"}\n  ],\n  \"connect_reserved\": [],\n  \"next_payout_at\": \"2026-04-26T08:00:00Z\",\n  \"payout_schedule\": \"daily\"\n}\n"
+
+  - name: "create_refund"
+    description: "Issue a refund against a charge. Requires human-in-the-loop approval via the Stripe dashboard before the refund actually executes."
+    inputSchema:
+      type: object
+      properties:
+        charge_id:
+          type: string
+        amount:
+          type: integer
+          description: "Refund amount in the smallest currency unit (cents). Defaults to full refund."
+        reason:
+          type: string
+          enum: ["duplicate", "fraudulent", "requested_by_customer"]
+      required: ["charge_id"]
+    response: "{\n  \"id\": \"re_pending_3OqA1x****\",\n  \"status\": \"pending_approval\",\n  \"charge\": \"<as supplied>\",\n  \"amount\": null,\n  \"reason\": \"<as supplied>\",\n  \"approval_url\": \"https://dashboard.stripe.com/refunds/pending/re_pending_3OqA1x\",\n  \"audit\": {\n    \"action\": \"refund.requested\",\n    \"actor\": \"<calling MCP client>\",\n    \"recorded\": true\n  },\n  \"note\": \"This refund is queued. A finance owner must approve in the Stripe dashboard before funds move. The MCP server cannot bypass this gate.\"\n}\n"
