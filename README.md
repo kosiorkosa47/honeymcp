@@ -39,11 +39,13 @@ MCP is a young protocol with a rapidly growing attack surface: **tool poisoning*
 - Handles `initialize`, `tools/list`, `tools/call`, and the common `notifications/*` frames.
 - Records `MCP-Protocol-Version`, `X-Forwarded-For`, `Accept`, and `User-Agent` alongside every request for threat-intel correlation.
 - Loads a **persona** from YAML - server name, version, instructions, and a list of fake tools with canned responses.
-- Ships **two personas** out of the box: `postgres-admin` and `github-admin`.
+- Ships **four personas** out of the box: `postgres-admin`, `github-admin`, `vercel-admin`, `stripe-finance` - covering source code, deployments, environment variables, and financial data.
 - Ships as a **Docker image** for one-command deploy; release builds are cosign-keyless-signed with SPDX + CycloneDX SBOMs attached.
 - Serves an **operator banner** (research-honeypot disclosure + GDPR contact) at `GET /`, dashboard at `/dashboard`.
 - Runs **seven threat detectors** (prompt injection, shell injection, CVE-2025-59536-class hook injection, secret exfil, unicode anomaly, recon, tool enumeration) on every request, tagging events at write time.
 - Logs every request/response to **SQLite** (primary, queryable) and optionally mirrors to **JSONL** (grep/jq-friendly), including timestamp, method, SHA-256 of params, raw params, client name/version, session id, transport, remote address, and User-Agent.
+- **Tags operator traffic** at write time (`is_operator` column). `/stats` excludes probes and validation curls by default so any number a third party reads is the external-only corpus; pass `?include_operator=true` to fold them back in.
+- **Exposes build provenance** at `GET /version` (crate version, 12-char git short sha with a `-dirty` suffix when relevant, RFC3339 build time). Every deploy is verifiable in one curl.
 
 Clustering, embeddings and a public weekly threat report come in later days of the sprint (see `.local-plans/` if you are the maintainer).
 
