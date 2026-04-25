@@ -1,4 +1,4 @@
-# What a $7 MCP honeypot caught in its first week
+# Week one of running a $7 MCP honeypot, an honest report
 
 **Date:** 2026-04-24
 **Honeymcp version:** 0.6.0-rc.1
@@ -7,102 +7,88 @@
 
 ---
 
-## The numbers
+## What I expected to publish
 
-5.6 days of uptime. 146 requests from the open internet. Seven detectors
-running on every request. 162 tagged detections (events can match more
-than one category).
+A breakdown of what attackers send to a fresh MCP honeypot. Top tool
+names, top detector categories, sample payloads, the usual shape. I
+had a draft that said "146 requests, 162 detections, top tool name
+`read_file` with 21 calls". That draft was wrong.
 
-Request methods:
+## What actually showed up
 
-| Method | Count |
-|---|---|
-| `tools/list` | 79 |
-| `tools/call` | 59 |
-| `initialize` | 8 |
+In 5.6 days, the box logged **5 requests from the open internet** from
+**3 unique remote sources**. None of them were targeted attackers.
+None of them invoked `tools/call`. None of them tripped a detector.
 
-Detector categories:
+The breakdown:
 
-| Detector | Hits |
-|---|---|
-| `recon` | 103 |
-| `secret_exfil` | 25 |
-| `command_injection` | 13 |
-| `prompt_injection` | 9 |
-| `unicode_anomaly` | 8 |
-| `supply_chain` | 4 |
+| Source | Events | Methods | Notes |
+|---|---|---|---|
+| `66.132.195.122` (CensysInspect/1.1) | 3 | initialize, notifications/initialized, tools/list | Internet-wide recon scanner |
+| `79.191.150.130` (curl/8.7.1) | 1 | initialize | One handshake, no follow-up |
+| `198.51.100.42` (xff-direct) | 1 | initialize | One handshake, no follow-up |
 
-## The interesting bit
+That is the entire external corpus. The other 145 events in the
+SQLite log are mine: 87 from local `curl` validating endpoints, 52
+from `honeymcp-probes` exercising every detector, the rest from
+deployment smoke tests.
 
-The persona serves a `github-admin` MCP server. Its advertised tools are
-things like `list_repositories`, `create_issue`, `review_pr`. None of
-those are in the top 10 of what attackers actually called.
+## Why my first draft said "21 read_file calls"
 
-Top called tool names, top 10:
+The `/stats` endpoint counts every event in the database, our own
+included. When I queried it for the draft post, the top tool list was
+dominated by `read_file`, `note`, `run`, `auth`. Those are the names
+`honeymcp-probes` fires when it audits an MCP server. I read the
+result as "what attackers sent". It was "what I sent the day before".
 
-| Tool name requested | Calls |
-|---|---|
-| `read_file` | 21 |
-| `note` | 8 |
-| `run` | 5 |
-| `auth` | 5 |
-| `write_file` | 4 |
-| `search` | 4 |
-| `login` | 4 |
-| `echo` | 4 |
-| `whoami` | 3 |
-| `search_code` | 1 |
+The fix in the corpus: filter by `user_agent NOT LIKE 'honeymcp-probes%'`
+and by remote IP not in the operator's known set. The fix in the post:
+publish what actually arrived from the internet, which is what you are
+reading now.
 
-Not one of those is in the persona's tool list. The honeypot's whole
-trick is a convincing `tools/list` response — if the attacker actually
-read it they would call `list_repositories`. They did not. They called
-`read_file`, `run`, `auth`, `write_file`. They called what they thought
-the server *might* have, regardless of the actual catalogue.
+## What this tells me about a fresh public MCP honeypot
 
-That matches the detector pattern too. `recon` fired 103 times because
-most sessions opened with a `tools/list`, then moved straight into
-`tools/call` on a guessed name, ignored the real tool list, and
-moved on.
+A 5-event week means the box exists on the internet but is not yet
+**discovered**. Singapore IP space, AWS Lightsail, no DNS name pointing
+at it, no posts linking to it, no bug-bounty listing. A targeted
+attacker does not stumble onto a freshly minted MCP server. Censys
+will index it within a week, which is what happened here. From there,
+discovery scales with whatever puts the IP in front of someone:
+search, mention, dataset.
 
-## What I think this means for people running real MCP servers
+So week one is a calibration period, not a corpus. The interesting
+question is week six.
 
-Your tool catalogue is advisory for attackers, not load-bearing. If
-you rely on "we don't expose `read_file`, so attackers won't call it",
-they will try it anyway and you will see 21 `read_file` attempts per
-week per box. Your server decides what to do when `tools/call` names
-an unknown tool, and that decision is what actually matters.
+## What I am changing about the methodology
 
-Current MCP SDKs default to a JSON-RPC method-not-found response. That
-is correct. Stay on that. Do not add a "helpful" fallback that tries to
-execute the tool name as a shell command because someone wrote a Stack
-Overflow answer saying it was clever.
+1. The `/stats` endpoint now needs an option to exclude the operator's
+   own traffic. Until then, every public number cites the operator-
+   filtered count.
+2. A scheduled job will tag every event with `is_operator: bool` at
+   write time based on a configurable allowlist (UA, source IP).
+3. The next data-drop will not happen until the external-only corpus
+   is large enough that filtering it does not produce noise. My rough
+   threshold is 200 external events from at least 30 unique sources.
+4. Until then, this blog will only publish observations that are true
+   even at small N: which scanners find the box, what they ask for in
+   `initialize`, how long until the first non-scanner.
 
-## Redacted examples
+## What I am keeping
 
-I will not paste live payloads in this post. A later write-up will,
-once I have a sampling routine I am comfortable publishing. What I will
-say:
+`honeymcp-probes` is still the fastest way to audit an MCP server you
+operate. It fires the same payloads the detectors are tuned for, runs
+in CI, and produces a JSON report. That part of the pitch is real.
+The change is that probe traffic and attacker traffic are now strictly
+separated in the corpus, and only one of them is honeypot data.
 
-- The `secret_exfil` hits were almost all attempts to get `auth` /
-  `login` / `whoami` responses that would include tokens.
-- The `command_injection` hits were shell-escape patterns inside the
-  `arguments` of a `run` call. Standard fare.
-- The `prompt_injection` hits targeted the persona's `instructions`
-  field, trying to flip the assistant's behaviour.
-- The `unicode_anomaly` hits were mostly zero-width joiners inside
-  tool arguments. Classic evasion, not sophisticated.
-- The `supply_chain` hits were requests to install a package from a
-  suspicious index. Interesting. Will dig deeper.
+## What I learned about writing this kind of post
 
-## Why I am writing this
+If your honeypot has been live for less than a month, your first
+instinct will be to dress up small numbers. Don't. The interesting
+finding from week one is that no targeted attacker found a fresh
+public MCP server in Singapore. That is a real, useful, operator-
+relevant fact. "21 read_file calls" was prettier and false.
 
-I am building honeymcp as a single-operator sensor for the MCP
-ecosystem because I could not find a public corpus of what attackers
-actually send to MCP servers. A week in, that corpus has started to
-exist. This is the first write-up pulled from it.
-
-- Repository: https://github.com/kosiorkosa47/honeymcp
-- You can audit your own MCP server with `honeymcp-probes`, the
-  second binary in the crate. Same attack taxonomy as the honeypot.
-- If you run an MCP server publicly and want to compare notes, my
-  contact is in the SECURITY.md of the repo.
+The repo is at https://github.com/kosiorkosa47/honeymcp. If you run an
+MCP server publicly and want to compare notes, the contact is in
+[`SECURITY.md`](https://github.com/kosiorkosa47/honeymcp/blob/main/SECURITY.md).
