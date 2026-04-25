@@ -1,0 +1,45 @@
+# GitHub CODEOWNERS for honeymcp.
+#
+# This file is the source of truth for "who reviews changes to what" so that
+# external contributors can target their PRs accurately. The repository is
+# currently maintained solo, so the owner is the same across the tree, but
+# the layout is kept granular so future maintainers can take ownership of
+# specific surfaces (transports, detectors, supply chain, docs) without
+# editing every PR description.
+#
+# Order matters: later rules win. The catch-all sits at the top.
+
+*                                   @kosiorkosa47
+
+# Wire-level transports. Changes here can break every existing client and
+# every future MCP spec interop. Reviewer should think about backward
+# compatibility with `/message` + `/sse` (deprecated 2025-03-26 path).
+/src/transport/                     @kosiorkosa47
+/src/transport/banner.txt           @kosiorkosa47
+/src/transport/banner.html          @kosiorkosa47
+
+# Detector taxonomy. Adding a new detector or changing a regex affects the
+# corpus retroactively (events get re-tagged) and the public threat-intel
+# blog posts. Reviewer should sanity-check ReDoS bounds and that the
+# detector is mirrored in honeymcp-probes.
+/src/detect/                        @kosiorkosa47
+/src/bin/probes.rs                  @kosiorkosa47
+
+# Persona definitions. These are the public face of the honeypot. A typo
+# here changes what every attacker sees in tools/list.
+/personas/                          @kosiorkosa47
+
+# Supply chain (release pipeline, signing, SBOM, container build).
+# Reviewer should verify cosign + Syft + GHCR push paths after any change.
+/.github/workflows/release.yml      @kosiorkosa47
+/Dockerfile                         @kosiorkosa47
+
+# CI. Required-status-check matrix lives here; changing this changes what
+# blocks merges to main.
+/.github/workflows/ci.yml           @kosiorkosa47
+
+# Legal + GDPR documentation. These shape how the operator banner reads
+# and what HONEYMCP_BANNER_* env vars substitute. Reviewer should confirm
+# any change still reflects a defensible legitimate-interest position.
+/docs/legal/                        @kosiorkosa47
+/SECURITY.md                        @kosiorkosa47
