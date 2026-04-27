@@ -9,7 +9,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
 
-> An open-source honeypot for the [Model Context Protocol](https://spec.modelcontextprotocol.io/) - impersonates a legitimate MCP server to collect threat intelligence on attacks against the MCP ecosystem.
+> An open-source honeypot for the [Model Context Protocol](https://modelcontextprotocol.io/docs/getting-started/intro) - impersonates a legitimate MCP server to collect threat intelligence on attacks against the MCP ecosystem.
 
 **Status:** Building toward v1.0 on a 28-day sprint. Currently speaks Streamable HTTP (MCP spec 2025-06-18) and legacy HTTP+SSE side by side.
 
