@@ -388,6 +388,100 @@ impl Logger {
             .collect();
         Ok(rows)
     }
+
+    /// One-row-per-event view of the most recent sessions, used by the
+    /// dashboard timeline. The dashboard groups these on the template
+    /// side keyed by session_id; we don't pre-aggregate here so the same
+    /// query feeds both the per-session view and the live feed without
+    /// fanning out into multiple SQL paths.
+    pub async fn recent_events_with_detections(
+        &self,
+        max_sessions: i64,
+        include_operator: bool,
+    ) -> Result<Vec<RawEventRow>> {
+        let db = self.inner.db.lock().await;
+
+        let session_filter = if include_operator {
+            ""
+        } else {
+            "AND e.is_operator = 0"
+        };
+
+        // Pull the most recent N session_ids (ordered by their newest event),
+        // then pull every event in those sessions plus matching detections.
+        // Two-step query keeps the inner select bounded; the dashboard never
+        // wants more than ~50 sessions on a first paint.
+        let sql = format!(
+            "WITH recent_sessions AS (
+               SELECT session_id, MAX(timestamp_ms) AS last_seen
+               FROM events e
+               WHERE 1=1 {session_filter}
+               GROUP BY session_id
+               ORDER BY last_seen DESC
+               LIMIT ?1
+             )
+             SELECT
+               e.id, e.timestamp_ms, e.session_id, e.method, e.params,
+               e.client_name, e.client_version, e.response_summary,
+               e.transport, e.remote_addr, e.user_agent, e.client_meta,
+               e.is_operator,
+               (SELECT json_group_array(json_object(
+                  'detector', d.detector,
+                  'severity', d.severity,
+                  'category', d.category,
+                  'evidence', d.evidence
+               ))
+                FROM detections d WHERE d.event_id = e.id) AS detections_json
+             FROM events e
+             JOIN recent_sessions r USING (session_id)
+             ORDER BY r.last_seen DESC, e.timestamp_ms ASC"
+        );
+
+        let mut stmt = db.prepare(&sql)?;
+        let rows = stmt
+            .query_map(params![max_sessions], |r| {
+                Ok(RawEventRow {
+                    id: r.get(0)?,
+                    timestamp_ms: r.get(1)?,
+                    session_id: r.get(2)?,
+                    method: r.get(3)?,
+                    params: r.get(4)?,
+                    client_name: r.get(5)?,
+                    client_version: r.get(6)?,
+                    response_summary: r.get(7)?,
+                    transport: r.get(8)?,
+                    remote_addr: r.get(9)?,
+                    user_agent: r.get(10)?,
+                    client_meta: r.get(11)?,
+                    is_operator: r.get::<_, i64>(12)? != 0,
+                    detections_json: r.get(13)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+}
+
+/// Wide row returned by [`Logger::recent_events_with_detections`]. Stays
+/// out of the public LogEntry API because it carries the inlined
+/// detection JSON aggregate that only the dashboard wants.
+#[derive(Debug, Clone)]
+pub struct RawEventRow {
+    pub id: i64,
+    pub timestamp_ms: i64,
+    pub session_id: String,
+    pub method: String,
+    pub params: Option<String>,
+    pub client_name: Option<String>,
+    pub client_version: Option<String>,
+    pub response_summary: String,
+    pub transport: Option<String>,
+    pub remote_addr: Option<String>,
+    pub user_agent: Option<String>,
+    pub client_meta: Option<String>,
+    pub is_operator: bool,
+    pub detections_json: Option<String>,
 }
 
 fn add_column_if_missing(db: &Connection, table: &str, column: &str, col_type: &str) -> Result<()> {

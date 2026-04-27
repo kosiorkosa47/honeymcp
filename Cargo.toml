@@ -34,6 +34,11 @@ futures = "0.3"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
+# Server-side templates for the dashboard v2 surface. Compile-time error
+# checking on template syntax + zero-runtime-build, so the dashboard ships
+# inside the Rust binary rather than as a separate frontend project.
+minijinja = { version = "2.13", features = ["loader"] }
+
 # Postgres backend (opt-in via --features postgres). SQLite remains the
 # default storage for all use cases; Postgres unlocks pgvector + horizontal
 # scale for the multi-region deployment described in docs/ARCHITECTURE.md.
