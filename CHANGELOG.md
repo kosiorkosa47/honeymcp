@@ -2,6 +2,113 @@
 
 ## [Unreleased]
 
+### Added - operator surface
+
+- **`/version` endpoint** (#17). `GET /version` returns JSON with crate name,
+  version, 12-char git short sha (with a `-dirty` suffix when the working tree
+  was unclean), Unix build timestamp, and an RFC3339 `build_time_utc`. Stamped
+  at compile time via a new `build.rs`. Every deploy is now verifiable in one
+  curl, which closed the gap that left us guessing whether the production VPS
+  actually carried the changes we just merged.
+
+- **Two new personas: `vercel-admin` and `stripe-finance`** (#27). Modelled
+  on the publicly-shipped `mcp.vercel.com` surface and the Stripe MCP catalog;
+  `vercel-admin` exposes 8 tools (teams, projects, deployments, build logs,
+  env vars with a `reveal=true` escape hatch, redeploy, doc search) and
+  `stripe-finance` exposes 7 (customers, charges, subscriptions, invoices,
+  balance, refund-with-human-approval-gate). Brings the shipped persona count
+  to four.
+
+### Added - data hygiene
+
+- **`is_operator` event tagging** (#26). New SQLite column populated at write
+  time by an `OperatorClassifier` that checks two signals: User-Agent prefix
+  (default `honeymcp-probes/`, configurable via
+  `HONEYMCP_OPERATOR_UA_PREFIXES`) and resolved remote IP, XFF-aware, against
+  an env allowlist (`HONEYMCP_OPERATOR_IPS`). All `/stats` aggregations now
+  exclude operator-tagged rows by default; pass `?include_operator=true` to
+  fold them back in. The response carries an `operator_traffic_included`
+  flag so a third party reading the JSON knows which corpus they got.
+  Closes the methodology promise made in
+  [`docs/blog/2026-04-24-first-week.md`](docs/blog/2026-04-24-first-week.md).
+
+### Added - CI + governance
+
+- **`docker build + smoke` CI job** (#23). Builds the production Dockerfile
+  on every PR, runs the resulting container against a real persona, and
+  asserts `/healthz`, `/version`, `GET /` operator banner, and `POST /mcp`
+  Streamable HTTP `initialize` all behave. Catches the class of regression
+  that #17 → #18 surfaced: cargo CI was 7-of-7 green throughout while the
+  Dockerfile build was broken because the new `build.rs` was not in the
+  builder COPY. Promoted to required status check (matrix grew 7 → 8).
+- **Codecov publishing** (#25, #31). `cargo-llvm-cov` already produced
+  `lcov.info` as a workflow artifact; now uploaded to Codecov via
+  `codecov-action@v5` with a per-repo `CODECOV_TOKEN` repo secret. README
+  badge is live at the current `main` percentage (#32 switched the URL to
+  the shields proxy after GitHub Camo cached the pre-token `unknown`
+  state). Codecov GitHub App installed for OIDC + PR delta comments.
+- **`CODEOWNERS`** (#19) with per-surface review routing (transports,
+  detectors, supply chain, legal docs). Solo maintainer for now, but laid
+  out so a future co-maintainer can pick up a slice without edits to every
+  PR description.
+- **`good first issue` triage** (#20, #21, #22) covering a shellshock-style
+  probe addition, MCP-Protocol-Version coverage in the detector regression
+  suite, and a persona-authoring guide.
+- **Persona follow-up tracking** (#28, #29, #30): `figma-dev`,
+  `cloudflare-edge`, `linear-pm`. Each issue carries enough scope and a
+  link to `personas/vercel-admin.yaml` as the authoritative format
+  reference.
+
+### Changed - dependencies
+
+- **OpenTelemetry chain bumped to 0.31** (#33). Atomic bump of `opentelemetry`
+  / `opentelemetry-otlp` / `opentelemetry_sdk` 0.27 → 0.31 plus
+  `tracing-opentelemetry` 0.28 → 0.32, replacing four separate Dependabot PRs
+  (#9, #11, #12, #13) that were closed as superseded. The 0.31 API rename
+  (`SdkTracerProvider`), the public-only `Resource::builder` constructor, and
+  the runtime-less `BatchSpanProcessor` had to land together; merging the
+  Dependabot PRs one at a time would have left `main` non-compiling under
+  `--features otel` between merges.
+
+- **Cargo: `thiserror` 1 → 2, `sha2` 0.10 → 0.11** (#7, #14).
+
+- **GitHub Actions runners refreshed**: `docker/setup-buildx` 3 → 4,
+  `docker/setup-qemu` 3 → 4, `docker/metadata-action` 5 → 6,
+  `softprops/action-gh-release` 2 → 3, `actions/upload-artifact` 4 → 7
+  (#1, #2, #4, #5, #6).
+
+### Fixed
+
+- **Dockerfile builder did not COPY `build.rs`** (#18). The new build
+  script that stamps git sha and build timestamp errored out the first time
+  we built the image post-#17 because cargo could not find the env vars at
+  compile time. The hotfix copies it explicitly and notes that the
+  in-image build runs without a `.git` tree (so the sha falls back to
+  `unknown` for locally-built images; only CI release builds carry a real
+  sha).
+
+- **First-week blog post numbers** (#24). The original draft cited 146
+  external requests and a top-tools chart dominated by `read_file`, `note`,
+  `run`. Pulling the JSONL off the VPS showed 145 of 150 events were
+  operator validation traffic and `honeymcp-probes` audits. Five real
+  external events from three unique sources, all `initialize` /
+  `tools/list`, zero `tools/call`, zero detector hits. The post now carries
+  the corrected numbers and the methodology-error explanation, and a
+  follow-up data-drop is gated on the external-only corpus reaching ≥200
+  events from ≥30 sources.
+
+### Notes
+
+- Production VPS has been re-deployed (locally-built `linux/amd64` image,
+  `git_sha: unknown`). The signed GHCR pull arrives with the v0.6.0 stable
+  tag after the rc.7 soak window completes.
+- Five Dependabot PRs remain open and intentionally not merged this cycle:
+  Rust toolchain 1.89 → 1.95 (#3, needs `rust-toolchain.toml` aligned in
+  the same commit), `tower_governor` 0.4 → 0.8 (#8, breaking API),
+  `axum` 0.7 → 0.8 (#10, transport-wide refactor), `rusqlite` 0.31 → 0.39
+  (#15, schema-touching), `tower_governor` carries the same constraint.
+  Each is tracked as a follow-up rather than batched into a release.
+
 ## [0.6.0-rc.1] - 2026-04-24
 
 ### Added - transport
