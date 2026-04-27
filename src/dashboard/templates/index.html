@@ -58,8 +58,8 @@
   </p>
 
   {% for session in sessions %}
-  <article class="hm-session" x-data="{ open: {{ 'true' if loop.first else 'false' }} }">
-    <header class="hm-session-head" @click="open = !open">
+  <details class="hm-session" {% if loop.first %}open{% endif %}>
+    <summary class="hm-session-head">
       <div class="hm-session-id">
         <span class="hm-session-dot hm-session-dot--{{ 'operator' if session.is_operator else 'external' }}"></span>
         <code>{{ session.session_id }}</code>
@@ -75,13 +75,13 @@
         <span class="hm-ua">{{ session.user_agent }}</span>
         <time datetime="{{ session.last_seen_iso }}">{{ session.last_seen_human }}</time>
       </div>
-    </header>
+    </summary>
 
     <a class="hm-session-sequence-link" href="/dashboard/sequence/{{ session.session_id_url }}.svg" target="_blank">
       open MCP sequence diagram
     </a>
 
-    <ol class="hm-session-events" x-show="open" x-transition>
+    <ol class="hm-session-events">
       {% for ev in session.events %}
       <li class="hm-event hm-event--{{ ev.method_class }}">
         <time datetime="{{ ev.iso }}">{{ ev.relative }}</time>
@@ -109,7 +109,7 @@
       </li>
       {% endfor %}
     </ol>
-  </article>
+  </details>
   {% endfor %}
 </section>
 
