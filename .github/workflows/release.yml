@@ -147,7 +147,7 @@ jobs:
       # rust-toolchain.toml pin, avoids the rustup-inside-container hit).
       - name: Build and push image
         id: push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64

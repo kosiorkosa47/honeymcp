@@ -74,7 +74,7 @@ jobs:
       # buys ~3 minutes per run; --load is required so the smoke step below
       # can `docker run` the result.
       - name: Build image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           load: true
