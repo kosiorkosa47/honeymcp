@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-04-27
+
+This is the first stable cut. The release closes the gap between
+`0.6.0-rc.1` (the smoke-test cut on 2026-04-24) and the production
+deploy that has been running on the Singapore Lightsail box since
+2026-04-25 19:06 UTC. 36+ hours of soak under live Censys traffic and
+operator validation, no restarts, no panic, no drift on `/healthz`.
+
+The signed GHCR image (`ghcr.io/kosiorkosa47/honeymcp:0.6.0`) is the
+first one I'd recommend pulling rather than building locally; it carries
+a real `git_sha` (the in-image build context now includes the workspace
+checkout that `release.yml` performs) and is signed via cosign keyless
+OIDC, with SPDX + CycloneDX SBOMs attested to the image digest.
+
 ### Added - operator surface
 
 - **`/version` endpoint** (#17). `GET /version` returns JSON with crate name,
