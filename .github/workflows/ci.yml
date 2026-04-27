@@ -159,7 +159,7 @@ jobs:
       # require a token; the action fails *open* on flake (fail_ci_if_error
       # is left default false) so a Codecov outage does not gate merges.
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           files: lcov.info
           flags: rust
