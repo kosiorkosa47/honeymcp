@@ -221,14 +221,14 @@ jobs:
       # pattern here silently downloaded nothing and left the release
       # missing binaries.
       - name: Download binary artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
           pattern: honeymcp-*
           merge-multiple: true
 
       - name: Download SBOM artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
           name: sbom
