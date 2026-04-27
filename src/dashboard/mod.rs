@@ -610,3 +610,202 @@ fn escape_xml(s: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn raw(id: i64, ts: i64, session: &str, method: &str, params: Option<&str>) -> RawEventRow {
+        RawEventRow {
+            id,
+            timestamp_ms: ts,
+            session_id: session.to_string(),
+            method: method.to_string(),
+            params: params.map(str::to_string),
+            client_name: None,
+            client_version: None,
+            response_summary: "ok".to_string(),
+            transport: Some("http".into()),
+            remote_addr: Some("203.0.113.7:54321".into()),
+            user_agent: Some("nikto/2.5.0".into()),
+            client_meta: None,
+            is_operator: false,
+            detections_json: None,
+        }
+    }
+
+    #[test]
+    fn escape_xml_handles_all_dangerous_chars() {
+        assert_eq!(
+            escape_xml(r#"<script>alert("&pwn")</script>"#),
+            "&lt;script&gt;alert(&quot;&amp;pwn&quot;)&lt;/script&gt;",
+        );
+    }
+
+    #[test]
+    fn truncate_preserves_short_strings_and_ellipsises_long() {
+        assert_eq!(truncate("hello", 10), "hello");
+        let long: String = "x".repeat(50);
+        let cut = truncate(&long, 10);
+        assert!(cut.starts_with("xxxxxxxxxx"));
+        assert!(cut.ends_with(" …"));
+    }
+
+    #[test]
+    fn method_class_for_recognises_mcp_method_families() {
+        assert_eq!(method_class_for("initialize"), "initialize");
+        assert_eq!(
+            method_class_for("notifications/initialized"),
+            "notifications"
+        );
+        assert_eq!(method_class_for("tools/call"), "tools");
+        assert_eq!(method_class_for("tools/list"), "tools");
+        assert_eq!(method_class_for("resources/read"), "other");
+    }
+
+    #[test]
+    fn parse_tool_name_only_for_tools_call() {
+        assert_eq!(
+            parse_tool_name("initialize", Some(r#"{"name":"x"}"#)).0,
+            None
+        );
+        assert_eq!(parse_tool_name("tools/list", None).0, None);
+        let (name, _unknown) =
+            parse_tool_name("tools/call", Some(r#"{"name":"read_file","arguments":{}}"#));
+        assert_eq!(name.as_deref(), Some("read_file"));
+    }
+
+    #[test]
+    fn parse_tool_name_handles_malformed_params_gracefully() {
+        assert_eq!(parse_tool_name("tools/call", Some("{not json")).0, None);
+        assert_eq!(
+            parse_tool_name("tools/call", Some(r#"{"no_name":true}"#)).0,
+            None
+        );
+    }
+
+    #[test]
+    fn parse_detections_returns_empty_for_null_or_empty() {
+        assert!(parse_detections(None).is_empty());
+        assert!(parse_detections(Some("")).is_empty());
+        assert!(parse_detections(Some("null")).is_empty());
+    }
+
+    #[test]
+    fn parse_detections_extracts_well_formed_array() {
+        let json = r#"[{"detector":"shell_injection","severity":"high","category":"command_injection","evidence":"; cat /etc/shadow"}]"#;
+        let d = parse_detections(Some(json));
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].detector, "shell_injection");
+        assert_eq!(d[0].severity, "high");
+        assert!(d[0].evidence.contains("/etc/shadow"));
+    }
+
+    #[test]
+    fn format_relative_buckets_into_human_units() {
+        let now = 100_000_000_000_i64;
+        assert_eq!(format_relative(now - 30_000, now), "30s ago");
+        assert_eq!(format_relative(now - 5 * 60_000, now), "5m ago");
+        assert_eq!(format_relative(now - 2 * 3_600_000, now), "2h ago");
+        assert_eq!(format_relative(now - 3 * 86_400_000, now), "3d ago");
+        // Future timestamps clamp to 0s rather than emit a negative count.
+        assert_eq!(format_relative(now + 5_000, now), "0s ago");
+    }
+
+    #[test]
+    fn format_iso_round_trips_unix_ms() {
+        let s = format_iso(1_700_000_000_000);
+        assert!(s.contains("2023-11-14"), "got {s}");
+        assert!(s.ends_with("Z") || s.contains("+"), "got {s}");
+    }
+
+    #[test]
+    fn urlencoding_preserves_safe_chars_and_percent_encodes_others() {
+        assert_eq!(urlencoding("abc-123_x.y~z"), "abc-123_x.y~z");
+        // Slash and colon (the only ones we'd see in real session ids) get encoded.
+        assert_eq!(urlencoding("a/b:c"), "a%2Fb%3Ac");
+    }
+
+    #[test]
+    fn group_into_sessions_orders_by_first_appearance() {
+        let rows = vec![
+            raw(1, 1_000, "sess-a", "initialize", None),
+            raw(2, 2_000, "sess-a", "tools/list", None),
+            raw(3, 3_000, "sess-b", "initialize", None),
+            raw(
+                4,
+                4_000,
+                "sess-a",
+                "tools/call",
+                Some(r#"{"name":"read_file"}"#),
+            ),
+        ];
+        let groups = group_into_sessions(rows);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].session_id, "sess-a");
+        assert_eq!(groups[0].event_count, 3);
+        assert_eq!(groups[1].session_id, "sess-b");
+        // Events inside a session render newest-first.
+        assert_eq!(groups[0].events[0].method, "tools/call");
+    }
+
+    #[test]
+    fn render_sequence_svg_carries_all_required_visual_anchors() {
+        let rows = vec![
+            raw(1, 1_000, "sess-x", "initialize", None),
+            raw(
+                2,
+                2_000,
+                "sess-x",
+                "tools/call",
+                Some(r#"{"name":"read_file"}"#),
+            ),
+        ];
+        let refs: Vec<&RawEventRow> = rows.iter().collect();
+        let svg = render_session_sequence_svg("sess-x", &refs);
+        assert!(svg.starts_with("<svg"), "missing svg root");
+        assert!(svg.contains("sess-x"), "missing session label");
+        assert!(svg.contains("attacker"), "missing client lifeline label");
+        assert!(svg.contains("honeymcp"), "missing server lifeline label");
+        assert!(svg.contains("initialize"), "missing initialize arrow text");
+        assert!(svg.contains("tools/call"), "missing tools/call arrow text");
+        assert!(svg.contains("read_file"), "missing tool name pill");
+    }
+
+    #[test]
+    fn render_sequence_svg_emits_detector_strike_when_detections_present() {
+        let mut row = raw(1, 1_000, "s", "tools/call", Some(r#"{"name":"x"}"#));
+        row.detections_json = Some(
+            r#"[{"detector":"shell_injection","severity":"high","category":"command_injection","evidence":";"}]"#
+                .into(),
+        );
+        let refs = vec![&row];
+        let svg = render_session_sequence_svg("s", &refs);
+        // The strike is a red rect on the right margin; colour is fixed in render().
+        assert!(svg.contains("fill=\"#ef5454\""), "missing detector strike");
+    }
+
+    #[test]
+    fn resolve_client_ip_prefers_xff_leftmost_over_socket_peer() {
+        let mut row = raw(1, 0, "s", "initialize", None);
+        row.client_meta = Some(r#"{"x_forwarded_for":"203.0.113.7, 10.0.0.1"}"#.into());
+        row.remote_addr = Some("127.0.0.1:1234".into());
+        assert_eq!(resolve_client_ip(&row), "203.0.113.7");
+    }
+
+    #[test]
+    fn resolve_client_ip_falls_back_to_remote_addr_without_port() {
+        let mut row = raw(1, 0, "s", "initialize", None);
+        row.client_meta = None;
+        row.remote_addr = Some("198.51.100.42:51000".into());
+        assert_eq!(resolve_client_ip(&row), "198.51.100.42");
+    }
+
+    #[test]
+    fn resolve_client_ip_handles_ipv6_brackets() {
+        let mut row = raw(1, 0, "s", "initialize", None);
+        row.client_meta = None;
+        row.remote_addr = Some("[2001:db8::1]:443".into());
+        assert_eq!(resolve_client_ip(&row), "2001:db8::1");
+    }
+}
