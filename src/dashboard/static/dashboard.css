@@ -210,14 +210,25 @@ body {
 }
 .hm-event {
   display: grid;
-  grid-template-columns: 100px 110px 1fr;
+  /* Method column is sized for the longest MCP method we expect to render
+   * (`notifications/initialized` is 26 chars at 12px mono ≈ 200 px); going
+   * narrower than that pushes the method text under the next column on
+   * any session that includes a notification frame. */
+  grid-template-columns: 90px 220px 1fr;
   gap: 8px 14px;
   align-items: baseline;
   font-size: 12px;
   padding: 6px 0;
 }
 .hm-event time { color: var(--hm-fg-muted); font-size: 11px; }
-.hm-method { color: var(--hm-accent); }
+.hm-method {
+  color: var(--hm-accent);
+  /* Belt-and-suspenders: even with a 220 px column, an unexpected method
+   * name (anything outside the JSON-RPC vocabulary the persona answers)
+   * should wrap inside its own cell rather than push into the summary. */
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
 .hm-event--initialize .hm-method,
 .hm-event--notifications .hm-method { color: var(--hm-fg-dim); }
 .hm-tool {
@@ -229,7 +240,16 @@ body {
 }
 .hm-tool--catalogue { background: rgba(168, 224, 104, 0.1); color: var(--hm-accent); border: 1px solid var(--hm-accent-dim); }
 .hm-tool--unknown   { background: rgba(239, 84, 84, 0.1);  color: var(--hm-crit);   border: 1px solid var(--hm-crit); }
-.hm-summary { color: var(--hm-fg); grid-column: 3; }
+.hm-summary {
+  color: var(--hm-fg);
+  grid-column: 3;
+  /* Long initialize summaries (e.g. CensysInspect's full UA echoed back)
+   * have to wrap inside their cell, otherwise they push the grid wider
+   * than its container and the timeline starts horizontal-scrolling. */
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
 
 .hm-event-detections {
   grid-column: 3;
@@ -289,7 +309,14 @@ body {
 .hm-sequence { background: var(--hm-bg); padding: 16px; border-radius: var(--hm-radius); }
 
 @media (max-width: 720px) {
-  .hm-event { grid-template-columns: 80px 90px 1fr; }
+  /* Single-column stacking is the only layout that survives a 26-char
+   * method name plus a long initialize summary at narrow widths; the
+   * cells flow vertically inside each event row instead of fighting
+   * for horizontal space. */
+  .hm-event { grid-template-columns: 1fr; gap: 4px 0; }
+  .hm-summary,
+  .hm-event-detections,
+  .hm-event-params { grid-column: 1; }
   .hm-overview { grid-template-columns: 1fr 1fr; }
   .hm-nav a:nth-child(n+3) { display: none; }
 }
