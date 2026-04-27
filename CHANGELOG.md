@@ -2,6 +2,69 @@
 
 ## [Unreleased]
 
+### Added - dashboard v2 foundation
+
+- **Server-rendered dashboard at `/dashboard`** (#42). Drops the legacy
+  single-file vanilla-JS embed (440 lines polling `/stats` every 5 s) in
+  favour of a `minijinja` server-side surface with htmx + Alpine.js for
+  small client-side state. All assets (templates, CSS, htmx, alpine) ship
+  inside the binary via `include_str!`; no `node_modules`, no separate
+  frontend repo, no asset pipeline. The full design is in
+  [`docs/dashboard-v2-design.md`](docs/dashboard-v2-design.md).
+
+- **Attack Story Timeline** is the new primary view. Sessions, not
+  requests, are the unit of analysis. Each session card carries an
+  external/operator dot, an event count, a detector count, and the
+  last-seen IP and User-Agent. Expanding a card shows every event in
+  the session ordered newest-first with detector strikes inline and a
+  collapsible params preview.
+
+- **MCP Sequence Diagram** at `/dashboard/sequence/<id>.svg`. Renders a
+  per-session protocol diagram server-side as standalone SVG: client
+  lifeline left, persona right, one arrow per JSON-RPC frame, tool
+  name pill on every `tools/call`, red strike on the right margin where
+  a detector fired. This is the visualisation no other honeypot
+  dashboard ships and is the headline component of the rewrite.
+
+- **Build provenance footer** on every dashboard page, hydrated from
+  `/version`. Shows the running version, 12-char git short sha,
+  RFC3339 build time, and a `cosign verified` marker linking to the
+  GHCR-signed image.
+
+- **Honest-by-default counters.** Every count on the dashboard is the
+  external corpus by default; the toggle is a real query parameter
+  (`?include_operator=true`) so URLs are shareable and the methodology
+  stays visible.
+
+- **16 unit tests** for dashboard helpers (XML escaping, MCP method
+  classification, tool-name parsing, detection JSON parsing, relative
+  time formatting, URL encoding, session grouping, sequence SVG
+  shape, IP resolution with XFF precedence). Patch coverage on the new
+  module rose from 0 to ~70%.
+
+### Changed
+
+- `HttpTransport` gains `with_logger()`. The dashboard surface mounts
+  only when both stats and logger are present; otherwise `/dashboard`
+  returns 503 with a clear message rather than serving an empty UI.
+- `Logger::recent_events_with_detections` is the single query feeding
+  both the timeline and the SVG path; it returns a wide `RawEventRow`
+  with the detection JSON aggregated server-side so handlers don't fan
+  out into multiple SQL paths.
+- README link to the Model Context Protocol now points at the
+  `/docs/getting-started/intro` page instead of the raw spec (#40).
+
+### Notes
+
+- The legacy `src/dashboard.html` embed has been removed. Operators on
+  `0.6.0` will lose the v1 dashboard at deploy time but gain the v2
+  one with no compose changes; the route stays at `/dashboard`.
+- Six remaining dashboard components from the design doc (Sankey,
+  detector co-occurrence heatmap, live SSE feed, geo-IP pulse map,
+  full provenance panel, methodology sidebar) are tracked as
+  follow-ups and ship incrementally without further breaking
+  changes.
+
 ## [0.6.0] - 2026-04-27
 
 This is the first stable cut. The release closes the gap between

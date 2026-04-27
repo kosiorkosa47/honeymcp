@@ -23,7 +23,7 @@ It's one Rust binary. About 15 MB, SQLite on disk, fits in 256 MiB of RAM. You r
 
 What lands in SQLite: timestamp, method, IP, User-Agent, client name and version, the `Mcp-Session-Id` they used, the `MCP-Protocol-Version` they claimed, and a SHA-256 of the raw params so reruns correlate. Seven detectors tag events at write time, so you can grep for "prompt-injection traffic that also did tool-enumeration" without scanning the whole DB.
 
-It's not a proxy. It won't protect your production MCP server. It's a trap you put on the internet to learn from. `GET /` returns a plain-text banner saying exactly that with a GDPR erasure contact. `GET /dashboard` shows the live feed. No admin panel, no write path exposed to the network.
+It's not a proxy. It won't protect your production MCP server. It's a trap you put on the internet to learn from. `GET /` returns a plain-text banner saying exactly that with a GDPR erasure contact. `GET /dashboard` is a server-rendered analyst surface (Attack Story Timeline grouped per session + per-session MCP Sequence Diagram SVG at `/dashboard/sequence/<id>.svg`); operator traffic is filtered out by default with a `?include_operator=true` toggle. No admin panel, no write path exposed to the network.
 
 `honeymcp-probes` is the second binary in this crate. It fires the same 13 payloads the detectors are tuned for, so you can audit your own MCP server without standing up a honeypot. Same codebase, same taxonomy.
 
@@ -41,7 +41,7 @@ MCP is a young protocol with a rapidly growing attack surface: **tool poisoning*
 - Loads a **persona** from YAML - server name, version, instructions, and a list of fake tools with canned responses.
 - Ships **four personas** out of the box: `postgres-admin`, `github-admin`, `vercel-admin`, `stripe-finance` - covering source code, deployments, environment variables, and financial data.
 - Ships as a **Docker image** for one-command deploy; release builds are cosign-keyless-signed with SPDX + CycloneDX SBOMs attached.
-- Serves an **operator banner** (research-honeypot disclosure + GDPR contact) at `GET /`, dashboard at `/dashboard`.
+- Serves an **operator banner** (research-honeypot disclosure + GDPR contact) at `GET /` and a server-rendered **analyst dashboard** at `/dashboard` (Attack Story Timeline + per-session MCP Sequence Diagram, all assets bundled in the binary, design in [`docs/dashboard-v2-design.md`](docs/dashboard-v2-design.md)).
 - Runs **seven threat detectors** (prompt injection, shell injection, CVE-2025-59536-class hook injection, secret exfil, unicode anomaly, recon, tool enumeration) on every request, tagging events at write time.
 - Logs every request/response to **SQLite** (primary, queryable) and optionally mirrors to **JSONL** (grep/jq-friendly), including timestamp, method, SHA-256 of params, raw params, client name/version, session id, transport, remote address, and User-Agent.
 - **Tags operator traffic** at write time (`is_operator` column). `/stats` excludes probes and validation curls by default so any number a third party reads is the external-only corpus; pass `?include_operator=true` to fold them back in.
