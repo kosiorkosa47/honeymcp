@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="hm-overview">
+  <div class="hm-stat">
+    <div class="hm-stat-label">external events</div>
+    <div class="hm-stat-value">{{ stats.total_events }}</div>
+    <div class="hm-stat-meta">
+      {% if stats.operator_traffic_included %}
+        <span class="hm-badge hm-badge--operator">includes operator traffic</span>
+      {% else %}
+        <span class="hm-badge hm-badge--external">external only</span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="hm-stat">
+    <div class="hm-stat-label">unique sources</div>
+    <div class="hm-stat-value">{{ stats.unique_remote_addrs_24h }}</div>
+    <div class="hm-stat-meta">last 24h</div>
+  </div>
+  <div class="hm-stat">
+    <div class="hm-stat-label">detector hits</div>
+    <div class="hm-stat-value">{{ stats.total_detections }}</div>
+    <div class="hm-stat-meta">across all sessions</div>
+  </div>
+  <div class="hm-stat">
+    <div class="hm-stat-label">persona</div>
+    <div class="hm-stat-value hm-stat-value--small">{{ stats.server.name }}</div>
+    <div class="hm-stat-meta">v{{ stats.server.version }} / {{ stats.server.protocol_version }}</div>
+  </div>
+</section>
+
+<section class="hm-controls">
+  <label class="hm-toggle">
+    <input type="checkbox" id="include_operator" x-model="include_operator"
+           @change="window.location.search = include_operator ? '?include_operator=true' : ''">
+    <span>include operator traffic</span>
+  </label>
+  <span class="hm-controls-note">
+    operator traffic = honeymcp-probes audits and configured allowlist IPs.
+    <a href="https://github.com/kosiorkosa47/honeymcp/blob/main/docs/blog/2026-04-24-first-week.md" target="_blank">why this filter exists</a>
+  </span>
+</section>
+
+<section class="hm-timeline">
+  <h2 class="hm-h2">attack story timeline</h2>
+  <p class="hm-h2-sub">
+    {% if sessions %}
+      {{ sessions | length }} session{{ "s" if sessions | length != 1 else "" }},
+      newest first. click any row to expand the raw payload + detector decision.
+    {% else %}
+      no sessions yet under the current filter.
+      {% if not stats.operator_traffic_included %}
+        toggle <em>include operator traffic</em> to see honeymcp-probes audits and validation curls.
+      {% endif %}
+    {% endif %}
+  </p>
+
+  {% for session in sessions %}
+  <article class="hm-session" x-data="{ open: {{ 'true' if loop.first else 'false' }} }">
+    <header class="hm-session-head" @click="open = !open">
+      <div class="hm-session-id">
+        <span class="hm-session-dot hm-session-dot--{{ 'operator' if session.is_operator else 'external' }}"></span>
+        <code>{{ session.session_id }}</code>
+      </div>
+      <div class="hm-session-stats">
+        <span>{{ session.event_count }} event{{ "s" if session.event_count != 1 else "" }}</span>
+        {% if session.detection_count > 0 %}
+          <span class="hm-detector-badge">{{ session.detection_count }} detector{{ "s" if session.detection_count != 1 else "" }}</span>
+        {% endif %}
+      </div>
+      <div class="hm-session-meta">
+        <span class="hm-remote">{{ session.client_ip }}</span>
+        <span class="hm-ua">{{ session.user_agent }}</span>
+        <time datetime="{{ session.last_seen_iso }}">{{ session.last_seen_human }}</time>
+      </div>
+    </header>
+
+    <a class="hm-session-sequence-link" href="/dashboard/sequence/{{ session.session_id_url }}.svg" target="_blank">
+      open MCP sequence diagram
+    </a>
+
+    <ol class="hm-session-events" x-show="open" x-transition>
+      {% for ev in session.events %}
+      <li class="hm-event hm-event--{{ ev.method_class }}">
+        <time datetime="{{ ev.iso }}">{{ ev.relative }}</time>
+        <span class="hm-method">{{ ev.method }}</span>
+        {% if ev.tool_name %}
+          <span class="hm-tool {{ 'hm-tool--unknown' if ev.tool_unknown else 'hm-tool--catalogue' }}">{{ ev.tool_name }}</span>
+        {% endif %}
+        <span class="hm-summary">{{ ev.response_summary }}</span>
+        {% if ev.detections %}
+          <ul class="hm-event-detections">
+          {% for d in ev.detections %}
+            <li class="hm-detector hm-detector--{{ d.severity }}">
+              <span class="hm-detector-name">{{ d.detector }}</span>
+              <span class="hm-detector-evidence">{{ d.evidence }}</span>
+            </li>
+          {% endfor %}
+          </ul>
+        {% endif %}
+        {% if ev.params_preview %}
+          <details class="hm-event-params">
+            <summary>params preview</summary>
+            <pre>{{ ev.params_preview }}</pre>
+          </details>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+  </article>
+  {% endfor %}
+</section>
+
+{% endblock %}

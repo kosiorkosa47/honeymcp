@@ -61,15 +61,28 @@ use crate::transport::{Handler, RequestContext, Transport};
 pub struct HttpTransport {
     addr: SocketAddr,
     stats: Option<Arc<dyn StatsProvider>>,
+    logger: Option<crate::logger::Logger>,
 }
 
 impl HttpTransport {
     pub fn new(addr: SocketAddr) -> Self {
-        Self { addr, stats: None }
+        Self {
+            addr,
+            stats: None,
+            logger: None,
+        }
     }
 
     pub fn with_stats(mut self, stats: Arc<dyn StatsProvider>) -> Self {
         self.stats = Some(stats);
+        self
+    }
+
+    /// Hand the http transport a Logger reference so the dashboard v2 surface
+    /// can query the events table directly. Without this the dashboard returns
+    /// 503 with a clear message rather than serving an empty UI.
+    pub fn with_logger(mut self, logger: crate::logger::Logger) -> Self {
+        self.logger = Some(logger);
         self
     }
 }
@@ -210,11 +223,47 @@ impl Transport for HttpTransport {
             .layer(body_limit)
             .with_state(state.clone());
 
+        // Dashboard v2 surface. Built only when a Logger reference is
+        // available; otherwise the routes return a clear 503 explaining
+        // the binary was built without dashboard wiring (see HttpTransport::with_logger).
+        let dashboard_routes = match self.logger.clone() {
+            Some(logger) => {
+                let dash_state = crate::dashboard::DashboardState {
+                    env: Arc::new(
+                        crate::dashboard::DashboardEnv::new()
+                            .context("loading dashboard templates")?,
+                    ),
+                    logger,
+                    stats: self.stats.clone(),
+                };
+                Router::new()
+                    .route("/dashboard", get(crate::dashboard::index_handler))
+                    .route(
+                        "/dashboard/sequence/:session_id_svg",
+                        get(crate::dashboard::sequence_handler),
+                    )
+                    .route(
+                        "/dashboard/static/:name",
+                        get(crate::dashboard::static_handler),
+                    )
+                    .with_state(dash_state)
+            }
+            None => Router::new().route(
+                "/dashboard",
+                get(|| async {
+                    (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "dashboard requires a Logger; rebuild with HttpTransport::with_logger",
+                    )
+                }),
+            ),
+        };
+
         let app = Router::new()
             .merge(message_routes)
+            .merge(dashboard_routes)
             .route("/sse", get(sse_handler))
             .route("/stats", get(stats_handler))
-            .route("/dashboard", get(dashboard_handler))
             .route("/version", get(version_handler))
             .route("/", get(banner_handler))
             .route("/healthz", get(|| async { "ok" }))
@@ -235,19 +284,10 @@ impl Transport for HttpTransport {
     }
 }
 
-/// Embedded static dashboard. Single-file vanilla JS polls `/stats` every 5 s and
-/// renders a small terminal-styled summary page. No build step, no framework, just
-/// a `<script>` block; kept inline so it ships baked into the binary.
-const DASHBOARD_HTML: &str = include_str!("../dashboard.html");
-
-async fn dashboard_handler() -> Response {
-    (
-        StatusCode::OK,
-        [("content-type", "text/html; charset=utf-8")],
-        DASHBOARD_HTML,
-    )
-        .into_response()
-}
+// Dashboard v2 lives in the `dashboard` module. The legacy embed
+// (`src/dashboard.html` + `dashboard_handler` in this file) was retired
+// when the new surface landed; see `docs/dashboard-v2-design.md` for the
+// rationale and component plan.
 
 /// Operator banner served at `GET /`. Serves the plain-text version by default; if
 /// the client sends `Accept: text/html`, the HTML version is returned instead.

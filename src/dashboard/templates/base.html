@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>honeymcp / dashboard</title>
+<style>{{ css | safe }}</style>
+<script src="/dashboard/static/htmx.min.js" defer></script>
+<script src="/dashboard/static/alpine.min.js" defer></script>
+</head>
+<body x-data="dashboardState()">
+
+<header class="hm-header">
+  <div class="hm-brand">
+    <span class="hm-dot" :class="ws_connected ? 'hm-dot--live' : 'hm-dot--idle'"></span>
+    <span class="hm-name">honeymcp</span>
+    <span class="hm-sep">/</span>
+    <span class="hm-section">dashboard</span>
+  </div>
+  <nav class="hm-nav">
+    <a href="/dashboard">timeline</a>
+    <a href="/dashboard?view=feed">live feed</a>
+    <a href="/version" target="_blank">version</a>
+    <a href="https://github.com/kosiorkosa47/honeymcp" target="_blank">repo</a>
+  </nav>
+</header>
+
+<main class="hm-main">
+{% block content %}{% endblock %}
+</main>
+
+<footer class="hm-footer" x-data x-init="loadProvenance()">
+  <span class="hm-prov-version">v<span x-text="provenance.version"></span></span>
+  <span class="hm-prov-sep">·</span>
+  <span class="hm-prov-sha"><span x-text="provenance.git_sha"></span></span>
+  <span class="hm-prov-sep">·</span>
+  <span class="hm-prov-time" x-text="formatBuildTime(provenance.build_time_utc)"></span>
+  <span class="hm-prov-sep">·</span>
+  <span class="hm-prov-cosign" title="Image signed with cosign keyless OIDC; verify against ghcr.io/kosiorkosa47/honeymcp">cosign verified</span>
+</footer>
+
+<script>
+function dashboardState() {
+  return {
+    ws_connected: false,
+    include_operator: new URLSearchParams(location.search).get('include_operator') === 'true',
+    provenance: { version: '...', git_sha: '...', build_time_utc: null },
+    async loadProvenance() {
+      try {
+        const r = await fetch('/version');
+        this.provenance = await r.json();
+      } catch (_) {
+        this.provenance = { version: 'offline', git_sha: '?', build_time_utc: null };
+      }
+    },
+    formatBuildTime(t) {
+      if (!t) return '?';
+      try { return new Date(t).toISOString().replace('T', ' ').replace(/:\d\d\.\d+Z$/, 'Z'); }
+      catch (_) { return t; }
+    },
+  };
+}
+</script>
+
+</body>
+</html>

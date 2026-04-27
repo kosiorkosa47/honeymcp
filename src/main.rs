@@ -92,7 +92,9 @@ async fn main() -> Result<()> {
                 dispatcher.persona().version.clone(),
             )
             .into_arc();
-            let mut transport = HttpTransport::new(addr).with_stats(stats);
+            let mut transport = HttpTransport::new(addr)
+                .with_stats(stats)
+                .with_logger(dispatcher.logger().clone());
             transport.run(dispatcher).await?;
         }
     }
