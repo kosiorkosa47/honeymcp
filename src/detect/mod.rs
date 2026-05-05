@@ -71,6 +71,11 @@ pub struct Detection {
     /// Short excerpt of the payload that triggered the rule.
     pub evidence: String,
     pub notes: Option<String>,
+    /// MITRE ATT&CK Enterprise / ATLAS technique IDs the detector maps to.
+    /// Static slice so detectors are zero-alloc; serialized as a JSON array
+    /// into the `detections.mitre_techniques` column so SIEM consumers can
+    /// pivot on technique ID directly. Empty slice = no mapping (NULL in SQL).
+    pub mitre_techniques: &'static [&'static str],
 }
 
 /// Minimal per-session view useful for stateful detectors (e.g. Recon needs the call

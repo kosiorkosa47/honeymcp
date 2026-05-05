@@ -66,6 +66,12 @@ impl Detector for UnicodeAnomalyDetector {
             severity: Severity::Medium,
             evidence: kind.to_string(),
             notes: Some(format!("method={}", ctx.entry.method)),
+            // T1027: Obfuscated Files or Information — bidi marks + tag-block
+            // characters are the textbook obfuscation primitives for hiding
+            // payloads from human reviewers.
+            // T1036.005: Match Legitimate Resource Name — homoglyph subset
+            // of this detector aligns with this sub-technique.
+            mitre_techniques: &["T1027", "T1036.005"],
         })
     }
 }

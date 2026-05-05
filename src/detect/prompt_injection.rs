@@ -66,6 +66,10 @@ impl Detector for PromptInjectionDetector {
                     severity: Severity::High,
                     evidence: needle.to_string(),
                     notes: Some(format!("method={}", ctx.entry.method)),
+                    // MITRE ATLAS (LLM-specific) is the right vocabulary here:
+                    // AML.T0051: LLM Prompt Injection (direct override).
+                    // AML.T0054: LLM Jailbreak (covers DAN-style needles).
+                    mitre_techniques: &["AML.T0051", "AML.T0054"],
                 });
             }
         }

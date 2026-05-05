@@ -36,6 +36,11 @@ impl Detector for ReconDetector {
                     stats.tools_list_count
                 ),
                 notes: Some("well-behaved clients call tools/list once".into()),
+                // T1518: Software Discovery — repeated tools/list is the MCP-shaped
+                // analogue of probing for installed tooling on a host.
+                // T1083: File and Directory Discovery — kept because some MCP
+                // servers expose filesystem-like primitives via tools/list.
+                mitre_techniques: &["T1518", "T1083"],
             });
         }
 
@@ -49,6 +54,10 @@ impl Detector for ReconDetector {
                 severity: Severity::Low,
                 evidence: "tools/call before initialize handshake".into(),
                 notes: Some(format!("session_calls={}", stats.calls_in_session)),
+                // T1190: Exploit Public-Facing Application — bypassing the
+                // initialize handshake is a protocol-level probe that often
+                // precedes exploitation attempts.
+                mitre_techniques: &["T1190", "T1518"],
             });
         }
 
