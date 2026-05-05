@@ -1,0 +1,64 @@
+name: fuzz-smoke
+
+# 60-second-per-target libfuzzer smoke test runs on every push to main and on
+# every PR. Goal is regression catching, not exhaustive search; the long
+# soaks happen on demand via `cargo +nightly fuzz run <target> -- -max_total_time=N`
+# when investigating a specific area.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "fuzz/**"
+      - ".github/workflows/fuzz.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "fuzz/**"
+      - ".github/workflows/fuzz.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz-smoke:
+    name: cargo fuzz (60s)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [jsonrpc_parse, detector_input]
+    steps:
+      - uses: actions/checkout@v6
+
+      # libfuzzer requires nightly Rust because it relies on -Z sanitizer
+      # flags that aren't stabilized. Pinned via the dtolnay action.
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Separate cache key from the main job — the fuzz workspace pulls
+          # in libfuzzer-sys + sanitizer-instrumented honeymcp build, which
+          # would otherwise pollute the main build cache.
+          key: fuzz-${{ matrix.target }}
+          workspaces: |
+            fuzz
+
+      - name: Install cargo-fuzz
+        run: cargo install --locked cargo-fuzz
+
+      - name: Run ${{ matrix.target }} for 60s
+        run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=60
+
+      # Upload any crash artifacts the run produced so we can debug failed
+      # CI runs without re-running locally. Empty upload is fine — the
+      # action just no-ops when no files match.
+      - name: Upload crash artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}/
+          if-no-files-found: ignore

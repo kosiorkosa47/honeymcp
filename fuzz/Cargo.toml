@@ -1,0 +1,29 @@
+[package]
+name = "honeymcp-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1"
+
+[dependencies.honeymcp]
+path = ".."
+
+[[bin]]
+name = "jsonrpc_parse"
+path = "fuzz_targets/jsonrpc_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "detector_input"
+path = "fuzz_targets/detector_input.rs"
+test = false
+doc = false
+bench = false
