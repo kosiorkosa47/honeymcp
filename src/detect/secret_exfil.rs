@@ -80,6 +80,12 @@ impl Detector for SecretExfilDetector {
             severity: Severity::Critical,
             evidence: m.as_str().to_string(),
             notes: Some(format!("method={}", ctx.entry.method)),
+            // T1552: Unsecured Credentials (parent).
+            // T1552.001: Credentials In Files — paths like ~/.aws/credentials
+            // or .env hits.
+            // T1552.005: Cloud Instance Metadata API — IMDS / metadata.google
+            // hits are an explicit class in the regex.
+            mitre_techniques: &["T1552", "T1552.001", "T1552.005"],
         })
     }
 }

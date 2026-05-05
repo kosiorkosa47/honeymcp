@@ -38,6 +38,11 @@ impl Detector for ToolEnumerationDetector {
                 ctx.stats.tools_call_count
             ),
             notes: Some("legitimate clients stay under 3 distinct tools per session".into()),
+            // T1518: Software Discovery — calling many distinct tools in one
+            // session is the MCP-shaped equivalent of mapping installed
+            // capabilities. T1083 added because some tools wrap filesystem
+            // primitives (read/list/grep style).
+            mitre_techniques: &["T1518", "T1083"],
         })
     }
 }

@@ -138,6 +138,11 @@ impl Logger {
         add_column_if_missing(&db, "events", "user_agent", "TEXT")?;
         add_column_if_missing(&db, "events", "client_meta", "TEXT")?;
         add_column_if_missing(&db, "events", "is_operator", "INTEGER NOT NULL DEFAULT 0")?;
+        // JSON-encoded array of MITRE ATT&CK / ATLAS technique IDs the
+        // detector mapped to. NULL when the detector emitted no mapping.
+        // Stored as TEXT (not a separate join table) so SIEM exporters
+        // can pull the column verbatim into STIX 2.1 / OpenSearch docs.
+        add_column_if_missing(&db, "detections", "mitre_techniques", "TEXT")?;
 
         let jsonl = match jsonl_path {
             Some(p) => {
@@ -260,11 +265,21 @@ impl Logger {
         let db = self.inner.db.lock().await;
         let mut stmt = db
             .prepare_cached(
-                "INSERT INTO detections (event_id, timestamp_ms, detector, severity, category, evidence, notes)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                "INSERT INTO detections (event_id, timestamp_ms, detector, severity, category, evidence, notes, mitre_techniques)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             )
             .context("preparing detection insert")?;
         for d in detections {
+            // Empty slice -> NULL so SIEM consumers can filter on "has mapping"
+            // with a plain IS NOT NULL predicate. JSON array otherwise.
+            let techniques_json = if d.mitre_techniques.is_empty() {
+                None
+            } else {
+                Some(
+                    serde_json::to_string(d.mitre_techniques)
+                        .context("serializing mitre techniques")?,
+                )
+            };
             stmt.execute(params![
                 event_id,
                 timestamp_ms,
@@ -273,6 +288,7 @@ impl Logger {
                 d.category.as_str(),
                 d.evidence,
                 d.notes,
+                techniques_json,
             ])
             .context("inserting detection row")?;
         }

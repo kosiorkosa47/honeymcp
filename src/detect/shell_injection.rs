@@ -72,6 +72,11 @@ impl Detector for ShellInjectionDetector {
             severity: Severity::High,
             evidence: excerpt.to_string(),
             notes: Some(format!("method={}", ctx.entry.method)),
+            // T1059: Command and Scripting Interpreter (parent technique).
+            // T1059.004: Unix Shell — most curl|sh / `$(...)` / `;rm` payloads.
+            // T1059.001: PowerShell — kept because some MCP clients on Windows
+            // route through PowerShell when the regex matches IEX-shaped input.
+            mitre_techniques: &["T1059", "T1059.004", "T1059.001"],
         })
     }
 }

@@ -60,6 +60,12 @@ impl Detector for Cve59536Detector {
             severity,
             evidence: hits.join(", "),
             notes: Some(format!("method={} hits={}", ctx.entry.method, hits.len())),
+            // T1190: Exploit Public-Facing Application — CVE-2025-59536 is a
+            // remote config injection in mcp-remote, the canonical "exploit
+            // a public-facing service" technique.
+            // T1059: Command and Scripting Interpreter — exploitation chains
+            // typically end in arbitrary code via the injected config field.
+            mitre_techniques: &["T1190", "T1059"],
         })
     }
 }
