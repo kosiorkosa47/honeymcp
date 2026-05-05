@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Changed - scope clarification
+
+- **Roadmap rewritten with honest scope** ([`docs/scope-decisions.md`](docs/scope-decisions.md)).
+  The original 28-day flagship plan (Terraform module set, multi-region
+  EKS + k3s deploy, ML classifier with HDBSCAN clustering) is formally
+  cut on the `v0.6` line. The README roadmap table now shows what is
+  shipped, what is scaffolded, and what is cut, with a link to the ADR
+  file explaining why each cut happened. `v0.7` intent is documented in
+  the same place: production OTLP wiring, Postgres recorder
+  implementation, comparison page, and the first responsibly-disclosed
+  MCP-ecosystem CVE.
+
 ### Added - persona authoring docs
 
 - Documented the persona YAML schema, tool description conventions,

@@ -230,16 +230,30 @@ Adjacent work exists but targets different layers:
 
 `honeymcp` fills a gap: **passive intel collection** on what attackers actually send to MCP servers in the wild, with server-shape accurate enough to sustain multi-turn interaction. Maps to OWASP Top 10 for Agentic Applications 2026 - **ASI04 (Agentic Supply Chain Vulnerabilities)** and **ASI05 (Unexpected Code Execution)**.
 
-## Roadmap toward v1.0
+## Roadmap
 
-Working target: `v1.0.0-rc.1` on a 28-day sprint.
+The original roadmap aimed at `v1.0.0-rc.1` in 28 days with a 4-week
+flagship plan (Terraform module set, multi-region EKS + k3s deploy,
+ML classifier, public weekly report). After two weeks of running the
+sensor solo on a $7 Lightsail box and watching real corpus growth, I
+cut that scope. The reasons are documented in
+[`docs/scope-decisions.md`](docs/scope-decisions.md).
 
-| Week | Focus | Status |
+The active roadmap is below. Stable cuts are real cuts (signed release
++ deploy + corrigendum); rows marked `cut` are explicitly out of scope
+for this line and tracked separately if they ever come back.
+
+| Track | Focus | Status |
 |------|-------|--------|
-| 1 - Foundation | stdio + Streamable HTTP + legacy HTTP+SSE, 7 detectors, CI (fmt + clippy + test matrix + audit + deny + coverage), signed release workflow, threat model + GDPR LIA | ✅ shipped |
-| 2 - Infrastructure | Postgres + pgvector backend, Terraform module set, multi-region deploy (EKS central + k3s edges), observability stack | in progress |
-| 3 - Analysis | Embeddings pipeline, rule + LLM classifier against OWASP T1-T15, HDBSCAN clustering, weekly report generator | pending |
-| 4 - Dashboard + v1.0 | Web dashboard (live feed + clusters + reports), STIX 2.1 export, landing page, security hardening, cut `v1.0.0-rc.1` | pending |
+| Foundation | stdio + Streamable HTTP + legacy HTTP+SSE, 7 detectors, CI (fmt + clippy + test matrix + audit + deny + coverage), signed release workflow + cosign + SBOMs, threat model + GDPR LIA | ✅ `v0.6.0` shipped 2026-04-27 |
+| Operator surface | Operator banner, `/version` build provenance, `is_operator` traffic filter, server-rendered analyst dashboard (Attack Story Timeline + per-session MCP Sequence Diagram) | ✅ shipped on `v0.6` line |
+| Persona library | `postgres-admin`, `github-admin`, `vercel-admin`, `stripe-finance` shipped; `figma-dev` / `cloudflare-edge` / `linear-pm` open as `good first issue` | 4 of 7 shipped |
+| Storage backends | SQLite is the operator default. Postgres + pgvector lives behind `--features postgres` with the migration set ready; the recorder side is scaffold-only and lights up when corpus growth justifies it | scaffold |
+| Observability | `--features otel` wires the OTLP exporter (`tracing-opentelemetry`); `HONEYMCP_LOG_FORMAT=json` for ndjson stderr; `Dispatcher::handle_request` is `#[instrument]`-ed | code ready, production wiring pending (see [`docs/scope-decisions.md`](docs/scope-decisions.md)) |
+| Corpus + analysis | Honest external-only counts everywhere; first weekly writeup published; data drop gated on ≥200 events from ≥30 unique sources (see [`docs/blog/2026-04-24-first-week.md`](docs/blog/2026-04-24-first-week.md)) | gated on corpus growth |
+| Multi-region (EKS central + k3s edges) | Out of scope on this line; needs >1 region of real traffic and a budget that justifies $300+/mo of orchestrator capacity. Tracked for re-evaluation after the first solo-region corpus drop | cut |
+| Terraform module set | Out of scope on this line; single-region Lightsail deploy is documented in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) and reproducible without IaC | cut |
+| ML classifier (HDBSCAN + LLM) | Out of scope on this line; rule-based detectors carry today's corpus. The pgvector index is in `migrations/` precisely so this can land later without a migration cliff | cut, scaffolded |
 
 ## Verify a release
 
