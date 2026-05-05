@@ -46,6 +46,7 @@ MCP is a young protocol with a rapidly growing attack surface: **tool poisoning*
 - Logs every request/response to **SQLite** (primary, queryable) and optionally mirrors to **JSONL** (grep/jq-friendly), including timestamp, method, SHA-256 of params, raw params, client name/version, session id, transport, remote address, and User-Agent.
 - **Tags operator traffic** at write time (`is_operator` column). `/stats` excludes probes and validation curls by default so any number a third party reads is the external-only corpus; pass `?include_operator=true` to fold them back in.
 - **Exposes build provenance** at `GET /version` (crate version, 12-char git short sha with a `-dirty` suffix when relevant, RFC3339 build time). Every deploy is verifiable in one curl.
+- **Exports to STIX 2.1** via `honeymcp --db hive.db --export-stix bundle.json`. Each detection becomes an `indicator` linked to MITRE ATT&CK / ATLAS `attack-pattern` objects (deduped across the bundle) plus per-event `observed-data` SCOs — TAXII / OpenCTI / Sentinel TI / Splunk Add-on for STIX ingest the file directly. Indicator UUIDs are v5-deterministic so re-exports stay stable.
 
 Clustering, embeddings and a public weekly threat report come in later days of the sprint (see `.local-plans/` if you are the maintainer).
 

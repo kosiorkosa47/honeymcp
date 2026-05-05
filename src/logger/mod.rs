@@ -445,7 +445,8 @@ impl Logger {
                   'detector', d.detector,
                   'severity', d.severity,
                   'category', d.category,
-                  'evidence', d.evidence
+                  'evidence', d.evidence,
+                  'mitre_techniques', d.mitre_techniques
                ))
                 FROM detections d WHERE d.event_id = e.id) AS detections_json
              FROM events e

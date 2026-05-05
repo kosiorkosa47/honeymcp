@@ -8,4 +8,5 @@ pub mod persona;
 pub mod protocol;
 pub mod server;
 pub mod stats;
+pub mod stix;
 pub mod transport;
