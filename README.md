@@ -199,6 +199,38 @@ make coverage     # lcov.info via cargo-llvm-cov
 make docker       # local image build
 ```
 
+### Performance
+
+The `benches/` directory carries three criterion suites covering the
+detector pipeline, the SQLite + JSONL recorder, and the dispatcher
+end-to-end. Numbers below are from a single M1 MacBook Pro
+(`aarch64-apple-darwin`, release profile, single-core measurement).
+A real Linux VPS gets close to the same shape with about 1.4× the
+CPU cost; treat these as one operator's reproducible baseline rather
+than vendor-style benchmark theatre.
+
+| Stage | Payload | Median latency | Throughput |
+|---|---|---|---|
+| Detector pipeline (analyze_all, all 7 detectors) | 200 B recon | 4.5 µs | ~220 k events/s |
+| Detector pipeline | 2 KB prompt-injection | 9.7 µs | ~103 k events/s |
+| Detector pipeline | 64 KB worst case | 462 µs | ~2.1 k events/s |
+| Logger.record (SQLite + JSONL) | 200 B | 260 µs | ~3.8 k events/s |
+| Logger.record | 64 KB | 612 µs | ~1.6 k events/s |
+| Dispatcher end-to-end (parse + persona + detect + record) | `initialize` | 292 µs | ~3.4 k req/s |
+| Dispatcher end-to-end | `tools/list` | 542 µs | ~1.8 k req/s |
+| Dispatcher end-to-end | `tools/call read_file` | 808 µs | ~1.2 k req/s |
+
+```bash
+cargo bench                  # all three suites, full criterion sample
+cargo bench --bench detectors -- --quick   # ~30 s, fewer samples
+```
+
+The bottleneck on a real deployment is the recorder, not the detector
+pipeline; the detectors themselves can analyse two orders of magnitude
+more events than SQLite can persist. That's the right ratio for a
+honeypot: every captured event runs the full classifier without the
+classifier ever pushing back on the request path.
+
 ### Optional feature flags
 
 Default build is SQLite + stderr logs, no external services. Two opt-in features:

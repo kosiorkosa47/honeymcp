@@ -4,10 +4,15 @@ WORKDIR /build
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY src ./src
+# Cargo parses [[bench]] entries from the manifest even when --bin scopes the
+# build to the production binary; the file targets must exist on disk or the
+# manifest fails to load. Cheap to copy (3 files, <500 lines) and it keeps the
+# release binary scope tight via --bin honeymcp.
+COPY benches ./benches
 # build.rs reads .git/HEAD if present to stamp HONEYMCP_GIT_SHA. The build
 # context here usually has no .git tree, so the script falls back to "unknown"
 # at compile time. Release builds populate it via CI env (see release.yml).
-RUN cargo build --release --locked
+RUN cargo build --bin honeymcp --release --locked
 
 FROM debian:bookworm-slim
 # curl is for the HEALTHCHECK script; ca-certificates + libssl3 are deps for
