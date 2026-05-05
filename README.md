@@ -161,6 +161,11 @@ tools:
 
 The persona is the only knob you need to turn to impersonate a new service.
 
+## Authoring personas
+
+For the full schema guide and a worked example, see
+[`docs/personas.md`](docs/personas.md).
+
 ## honeymcp-probes
 
 Ships as a second binary in this crate. A CLI battery of 13 attack payloads you point at any MCP endpoint to see what gets through:
