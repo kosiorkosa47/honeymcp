@@ -71,6 +71,10 @@ tempfile = "3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "io-util", "sync", "fs", "test-util"] }
 wiremock = "0.6"
 criterion = { version = "0.5", features = ["async_tokio", "html_reports"] }
+# Property-based tests live under `tests/property_*.rs`. The fixed seed in
+# proptest/proptest-regressions/ keeps a known counter-example replayed
+# on every run so once a bug is captured it stays captured.
+proptest = "1"
 
 [[bench]]
 name = "detectors"
