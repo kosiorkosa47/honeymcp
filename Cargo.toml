@@ -33,6 +33,10 @@ async-stream = "0.3"
 futures = "0.3"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# v4 for the bundle id (must be unique per export); v5 for deterministic
+# indicator/attack-pattern/observed-data IDs so re-exporting the same DB
+# produces stable refs that downstream TAXII consumers can dedupe on.
+uuid = { version = "1", features = ["v4", "v5"] }
 
 # Server-side templates for the dashboard v2 surface. Compile-time error
 # checking on template syntax + zero-runtime-build, so the dashboard ships
