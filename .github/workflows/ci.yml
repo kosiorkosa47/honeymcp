@@ -63,6 +63,23 @@ jobs:
           command: check
           arguments: --all-features
 
+  bench-smoke:
+    name: cargo bench --no-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Bench harness shares most deps with the test profile, but
+          # criterion adds a chunky tree of its own. Separate cache key
+          # so a stable bench cache survives unrelated test churn.
+          key: bench
+      # `--no-run` builds the bench binaries without executing them.
+      # Catches API drift in `benches/*.rs` before it ships to main and
+      # leaves anyone running `cargo bench` locally with a broken harness.
+      - run: cargo bench --no-run --benches
+
   docker:
     name: docker build + smoke
     runs-on: ubuntu-latest

@@ -70,8 +70,28 @@ path = "src/main.rs"
 tempfile = "3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "io-util", "sync", "fs", "test-util"] }
 wiremock = "0.6"
+criterion = { version = "0.5", features = ["async_tokio", "html_reports"] }
+
+[[bench]]
+name = "detectors"
+harness = false
+
+[[bench]]
+name = "logger"
+harness = false
+
+[[bench]]
+name = "dispatcher"
+harness = false
 
 [profile.release]
 lto = "thin"
 codegen-units = 1
 strip = true
+
+[profile.bench]
+# Match the production profile so benchmark numbers reflect what an
+# operator actually deploys, rather than what an unoptimized debug
+# build would do under microbench harness pressure.
+inherits = "release"
+debug = true

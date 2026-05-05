@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Added - performance benchmark suite
+
+- **Three criterion benches** under `benches/` covering the detector
+  pipeline (`detectors.rs`), the SQLite + JSONL recorder
+  (`logger.rs`), and the dispatcher end-to-end path
+  (`dispatcher.rs`). Each suite runs on payload sizes that mirror
+  real attacker traffic: a 200 B recon probe, a 2 KB prompt-injection
+  attempt, and a 64 KB worst case the regex engine has to defend
+  against.
+- README "Performance" section publishes the M1 baseline as a real
+  table — detector pipeline at ~220 k events/s for small payloads
+  scaling down to ~2.1 k events/s at 64 KB, dispatcher end-to-end at
+  ~1.2-3.4 k req/s depending on method. The recorder is the
+  bottleneck, not the detector — that ratio is intentional.
+- `bench` profile inherits from `release` plus `debug = true` so
+  symbols survive into criterion's flamegraphs without changing what
+  an operator actually runs.
+- CI gains a `cargo bench --no-run` smoke compile so that future PRs
+  can't break the bench harness silently while leaving cargo test
+  green.
+
 ### Changed - scope clarification
 
 - **Roadmap rewritten with honest scope** ([`docs/scope-decisions.md`](docs/scope-decisions.md)).
