@@ -77,7 +77,7 @@ Inspect collected events:
 sqlite3 hive.db 'SELECT method, client_name, response_summary FROM events ORDER BY id DESC LIMIT 20;'
 ```
 
-For deploying the honeypot on a public VPS with HTTPS, see [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+For deploying the honeypot on a public VPS with HTTPS, see [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). For day-2 operations — health checks, alert response, triage SQL, backup, scaling — see [`docs/RUNBOOK.md`](docs/RUNBOOK.md). The service-level objectives the project commits to are documented in [`docs/SLOS.md`](docs/SLOS.md).
 
 <details>
 <summary>Example session output</summary>
