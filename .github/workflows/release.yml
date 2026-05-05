@@ -103,6 +103,16 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value "ASSET=$staging.zip"
           Add-Content -Path $env:GITHUB_ENV -Value "ASSET_SHA=$staging.zip.sha256"
 
+      # SLSA L3 build provenance via the GitHub-native attestation API. The
+      # action is OIDC-authenticated against sigstore; output is a signed
+      # in-toto attestation registered against this repo. Consumers verify
+      # with `gh attestation verify <artifact> --owner kosiorkosa47`.
+      # See docs/SLSA.md for the verification workflow.
+      - name: Generate SLSA build provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: ${{ env.ASSET }}
+
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
@@ -195,6 +205,17 @@ jobs:
               --type spdxjson \
               "${tag}@${DIGEST}"
           done
+
+      # SLSA L3 provenance for the container image. push-to-registry binds
+      # the attestation to the OCI manifest so `cosign verify-attestation`
+      # and `gh attestation verify-image` both resolve the signed predicate
+      # without a separate file. Verification recipe in docs/SLSA.md.
+      - name: Generate SLSA build provenance for image
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
 
       - name: Upload SBOM artifacts
         uses: actions/upload-artifact@v7
