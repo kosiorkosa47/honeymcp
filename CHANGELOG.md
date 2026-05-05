@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added - persona authoring docs
+
+- Documented the persona YAML schema, tool description conventions,
+  canned response matching behaviour, and a full `kubernetes-cluster`
+  worked example in [`docs/personas.md`](docs/personas.md) (#22).
+
 ### Added - dashboard v2 foundation
 
 - **Server-rendered dashboard at `/dashboard`** (#42). Drops the legacy
