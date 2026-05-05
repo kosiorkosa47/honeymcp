@@ -2,7 +2,153 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-05
+
+The enterprise-grade hardening release. Seven PRs landed in one sitting,
+each independent, all touching a different surface a SOC buyer audits
+before approving honeymcp for deployment: performance numbers,
+crash-resistance contracts, detector-to-MITRE mapping, TI-feed export,
+day-2 ops docs, and SLSA Level 3 build provenance.
+
+### Added - SLSA Level 3 build provenance
+
+- **Every release artifact ships with a signed in-toto attestation**
+  via `actions/attest-build-provenance@v3` in both the per-target
+  build matrix and the container job. Binaries are verifiable with
+  `gh attestation verify <artifact> --owner kosiorkosa47`; the
+  container image attestation is bound to the OCI manifest so
+  `gh attestation verify-image` resolves without a separate file.
+- [`docs/SLSA.md`](docs/SLSA.md) walks through what L3 actually
+  guarantees, gives copy-pasteable verification recipes for binaries
+  and images, maps each L3 requirement to how honeymcp satisfies it,
+  and documents why the project explicitly does not claim L4
+  (Cargo's network access during `cargo fetch` fails the hermetic
+  build test; not worth `cargo vendor` overhead at current scale).
+- The release stack is now signature ✓ + SBOM ✓ + provenance ✓ —
+  the same trust model the kernel and Kubernetes ship with.
+
+### Added - operational runbook + service-level objectives
+
+- [`docs/RUNBOOK.md`](docs/RUNBOOK.md) is the page on-call reaches
+  for when something looks wrong: deploy with cosign-verify gating,
+  five common alert templates with response procedures, ten triage
+  SQL queries (per-category detection volume, MITRE technique
+  distinct-list, top attacker IPs, prompt-injection-plus-recon
+  chain detection), atomic backup via `VACUUM INTO`, scaling
+  ceilings with bottleneck order (SQLite → detector pipeline →
+  network), and decommission with `shred`.
+- [`docs/SLOS.md`](docs/SLOS.md) publishes the project's public
+  service-level objectives: 99.9% liveness over 30 days, 99% p99
+  ingest within 250 ms, 100% detection accuracy backed by the
+  property + fuzz suites, 100% persistence on graceful exit, 100%
+  build-provenance reporting at `/version`. Each SLO names its SLI
+  source and explains the number, including the explicit non-SLOs
+  (dashboard latency, multi-region, throughput beyond 1k events/s
+  on SQLite).
+
+### Added - STIX 2.1 export with MITRE attack-pattern refs
+
+- New `--export-stix <path>` CLI flag dumps the SQLite corpus as a
+  STIX 2.1 Bundle suitable for direct TAXII / OpenCTI / Sentinel TI
+  / Splunk Add-on for STIX ingestion.
+- Each detection becomes one `indicator` (custom STIX pattern over
+  `x-honeymcp-detection`, severity + category in `labels`,
+  indicator_types mapped per category) plus one `observed-data` per
+  event carrying request envelope custom properties (session_id,
+  method, remote_addr, user_agent), plus one `attack-pattern` per
+  MITRE technique (deduped across the bundle, carrying canonical
+  external_references with mitre-attack URLs for `T*` and
+  mitre-atlas URLs for `AML.T*`).
+- `relationship` objects link `indicator -> based-on -> observed-data`
+  and `indicator -> indicates -> attack-pattern`.
+- Indicator / attack-pattern / observed-data IDs are UUID v5 under a
+  project-pinned namespace, so re-exporting the same DB produces
+  stable refs that downstream TAXII consumers dedupe on naturally.
+- 14 unit tests covering bundle structure, deterministic IDs, dedup,
+  ATT&CK vs ATLAS URL routing, STIX 2.1 string-literal escaping,
+  and the SQL-aggregate-to-source adapter functions.
+
+### Added - MITRE ATT&CK / ATLAS technique mapping
+
+- `Detection.mitre_techniques: &'static [&'static str]` populated by
+  every shipped detector with the relevant ATT&CK Enterprise or
+  ATLAS technique IDs (shell injection → T1059 family, prompt
+  injection → AML.T0051 + AML.T0054, secret exfil → T1552 family,
+  recon → T1518 + T1083, CVE-2025-59536 → T1190 + T1059, unicode
+  anomaly → T1027 + T1036.005, tool enumeration → T1518 + T1083).
+- Persisted via backwards-compatible `add_column_if_missing` to
+  `detections.mitre_techniques` as a JSON-encoded array. SIEM
+  consumers query the column verbatim; existing operators upgrade in
+  place without manual schema work.
+- [`docs/MITRE-MAPPING.md`](docs/MITRE-MAPPING.md) tabulates the
+  mapping with justification for every technique pick and includes
+  sample SQL using SQLite JSON1 to enumerate observed techniques.
+- Contract test suite (`tests/mitre_mapping.rs`, 8 cases) drives
+  every detector with a tailored payload, asserts at least one
+  well-formed technique ID comes back, and validates the format
+  (Enterprise vs ATLAS bands). Catches typos like `T01059` at test
+  time and ensures any future detector emits a non-empty slice.
+
+### Added - cargo-fuzz harness with two libfuzzer targets
+
+- `fuzz/fuzz_targets/jsonrpc_parse.rs` runs `serde_json::from_slice`
+  for `JsonRpcRequest` (the dispatcher's body parser) under
+  coverage-guided mutation.
+- `fuzz/fuzz_targets/detector_input.rs` splits the byte stream into
+  a method prefix + JSON body, parses the body, and pushes the
+  synthesized `LogEntry` through `Registry::default_enabled().analyze_all`
+  exactly the way the dispatcher does. Exercises all seven shipped
+  detectors under fuzz.
+- `.github/workflows/fuzz.yml` runs both targets for 60 s on every
+  push to main and every PR, with a 15-minute job cap and crash-
+  artifact upload on failure so failed runs are debuggable without
+  re-running locally. Pinned to nightly Rust because libfuzzer's
+  sanitizer flags aren't stabilized.
+- Local validation: `jsonrpc_parse` churned 375 k inputs in 11 s
+  with zero crashes; `detector_input` independently rediscovered the
+  shell-injection char-boundary panic the property suite caught,
+  confirming both layers cover the same contract from different
+  angles.
+
+### Added - property-based tests for parser, detectors, persona loader
+
+- Three suites under `tests/property_*.rs` running on every
+  `cargo test` invocation: 1024 cases for the JSON-RPC parser, 256
+  cases × three case-shapes for the detector pipeline, 256 cases
+  for the persona YAML loader. Each suite asserts the crash-
+  resistance contract — bytes in, `Result::Err` out, never an
+  unwind — for attacker-facing code paths.
+- **Found a real bug.** The detector suite immediately surfaced a
+  slice-on-non-char-boundary panic in `src/detect/shell_injection.rs:57`
+  on multi-byte UTF-8 input (emoji, RTL marks, surrogate-pair
+  lookalikes). Fixed by snapping the regex match window to char
+  boundaries via `is_char_boundary` walk-back/walk-forward. The
+  shrunk counter-example is checked in under
+  `tests/property_detectors.proptest-regressions` so the regression
+  replays on every CI run.
+
 ### Added - performance benchmark suite
+
+- **Three criterion benches** under `benches/` covering the detector
+  pipeline (`detectors.rs`), the SQLite + JSONL recorder
+  (`logger.rs`), and the dispatcher end-to-end path
+  (`dispatcher.rs`). Each suite runs on payload sizes that mirror
+  real attacker traffic: a 200 B recon probe, a 2 KB prompt-injection
+  attempt, and a 64 KB worst case the regex engine has to defend
+  against.
+- README "Performance" section publishes the M1 baseline as a real
+  table — detector pipeline at ~220 k events/s for small payloads
+  scaling down to ~2.1 k events/s at 64 KB, dispatcher end-to-end at
+  ~1.2-3.4 k req/s depending on method. The recorder is the
+  bottleneck, not the detector — that ratio is intentional.
+- `bench` profile inherits from `release` plus `debug = true` so
+  symbols survive into criterion's flamegraphs without changing what
+  an operator actually runs.
+- CI gains a `cargo bench --no-run` smoke compile so that future PRs
+  can't break the bench harness silently while leaving cargo test
+  green.
+
+### Changed - scope clarification
 
 - **Three criterion benches** under `benches/` covering the detector
   pipeline (`detectors.rs`), the SQLite + JSONL recorder
