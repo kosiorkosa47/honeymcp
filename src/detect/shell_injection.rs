@@ -52,8 +52,19 @@ impl Detector for ShellInjectionDetector {
         let params = ctx.entry.params.as_ref()?;
         let body = params.to_string();
         let m = pattern().find(&body)?;
-        let start = m.start().saturating_sub(16);
-        let end = (m.end() + 16).min(body.len());
+        // Snap excerpt window to UTF-8 char boundaries so attacker-supplied
+        // multi-byte sequences (emoji, surrogate-pair lookalikes, RTL marks)
+        // can't trigger a slice-on-non-boundary panic. Found by proptest.
+        let raw_start = m.start().saturating_sub(16);
+        let raw_end = (m.end() + 16).min(body.len());
+        let mut start = raw_start;
+        while start > 0 && !body.is_char_boundary(start) {
+            start -= 1;
+        }
+        let mut end = raw_end;
+        while end < body.len() && !body.is_char_boundary(end) {
+            end += 1;
+        }
         let excerpt = &body[start..end];
         Some(Detection {
             detector: "shell_injection_patterns",

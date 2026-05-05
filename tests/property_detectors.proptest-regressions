@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc db8b2ec88ced1aef316b12f63f0714afff8a8a399bb77c96b830a5d3a630ebf9 # shrinks to tool_name = "", arguments = Array [String("𐀀   aࠀ𐀀A ``")]
+cc 7a5e3a4eaa82185a1b5ba204de21470ae88305f9140f8dcdc9b5633be7ee1bc3 # shrinks to params = Array [String("``\0a¡𐀀𐀀")], method = "initialize", calls = 0, list_count = 0, call_count = 0
