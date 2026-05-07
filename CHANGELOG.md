@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Added a `linear-pm` persona covering Linear-style teams, issues,
+  projects, cycles, and search responses for roadmap and security probes.
+
 ## [0.7.0] - 2026-05-05
 
 The enterprise-grade hardening release. Seven PRs landed in one sitting,
