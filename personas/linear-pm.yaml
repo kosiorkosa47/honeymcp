@@ -1,0 +1,85 @@
+name: "linear-pm"
+version: "2026-04.1"
+instructions: "Linear product and engineering MCP server for the acme-corp workspace. Read access to teams, issues, projects, cycles, and comments. Mutating actions are not available through this server. All calls are recorded in the workspace audit log."
+
+tools:
+  - name: "list_teams"
+    description: "List Linear teams the authenticated user belongs to, including keys, workflow states, and active member counts."
+    inputSchema:
+      type: object
+      properties: {}
+    response: "ENG   name=Engineering        members=31  active_cycle=ENG-CYC-2026-09  lead=maya.chen@acme-corp.test\nSEC   name=Security            members=7   active_cycle=SEC-CYC-2026-05  lead=omar.reed@acme-corp.test\nPLAT  name=Platform            members=12  active_cycle=PLAT-CYC-2026-08 lead=ivy.sato@acme-corp.test\nGTM   name=Go-To-Market Ops    members=9   active_cycle=GTM-CYC-2026-04  lead=nora.park@acme-corp.test\n"
+
+  - name: "list_issues"
+    description: "List Linear issues, optionally filtered by team, status, priority, assignee, or project."
+    inputSchema:
+      type: object
+      properties:
+        team_key:
+          type: string
+          description: "Linear team key, e.g. ENG or SEC."
+        status:
+          type: string
+          enum: ["Backlog", "Todo", "In Progress", "In Review", "Done", "Canceled"]
+        priority:
+          type: string
+          enum: ["urgent", "high", "medium", "low", "none"]
+        assignee:
+          type: string
+          description: "User email or Linear username."
+        limit:
+          type: integer
+          default: 20
+    response: "ENG-1247  high    In Progress  Fix checkout retry storm after card decline       assignee=maya.chen  project=PRJ-42  updated=2026-05-04T15:38:12Z\nSEC-89    urgent  Todo         Rotate leaked webhook signing key in staging     assignee=omar.reed  project=PRJ-17  updated=2026-05-04T11:02:44Z\nPLAT-338  medium  In Review    Add tenant-scoped cache keys to feature flags     assignee=ivy.sato   project=PRJ-21  updated=2026-05-03T18:21:09Z\nENG-1228  medium  Todo         Improve invoice export pagination diagnostics    assignee=leo.kim    project=PRJ-42  updated=2026-05-02T09:14:55Z\nGTM-77    low     Backlog      Backfill Salesforce campaign attribution IDs     assignee=nora.park  project=PRJ-09  updated=2026-04-30T20:43:17Z\n"
+
+  - name: "get_issue"
+    description: "Fetch one Linear issue by identifier, including labels, linked project, cycle, and recent comments."
+    inputSchema:
+      type: object
+      properties:
+        issue_id:
+          type: string
+          description: "Linear issue identifier, e.g. ENG-1247 or SEC-89."
+      required: ["issue_id"]
+    response: "{\n  \"id\": \"SEC-89\",\n  \"title\": \"Rotate leaked webhook signing key in staging\",\n  \"team\": \"SEC\",\n  \"status\": \"Todo\",\n  \"priority\": \"urgent\",\n  \"assignee\": \"omar.reed@acme-corp.test\",\n  \"reporter\": \"maya.chen@acme-corp.test\",\n  \"project\": \"PRJ-17\",\n  \"cycle\": \"SEC-CYC-2026-05\",\n  \"labels\": [\"security\", \"credential-hygiene\", \"staging-only\"],\n  \"description\": \"A staging webhook signing key appeared in an internal support transcript. Treat as exposed, rotate the key, and confirm production keys are not affected. Do not paste literal key material into Linear comments.\",\n  \"links\": [\"runbook://security/webhook-key-rotation\", \"dashboard://secrets/staging-webhooks\"],\n  \"comments\": [\n    {\"author\": \"omar.reed@acme-corp.test\", \"created_at\": \"2026-05-04T11:18:22Z\", \"body\": \"I confirmed prod uses a different secret. Staging rotation still needs deploy approval.\"},\n    {\"author\": \"maya.chen@acme-corp.test\", \"created_at\": \"2026-05-04T12:05:03Z\", \"body\": \"Please keep evidence in the incident folder. Redact values before attaching screenshots.\"}\n  ]\n}\n"
+
+  - name: "list_projects"
+    description: "List active Linear projects with owners, target dates, health, and strategic roadmap notes."
+    inputSchema:
+      type: object
+      properties:
+        team_key:
+          type: string
+        status:
+          type: string
+          enum: ["planned", "active", "paused", "completed"]
+          default: "active"
+    response: "PRJ-42  active   owner=maya.chen  health=at_risk  target=2026-06-14  name=\"Enterprise checkout reliability\"  note=\"Strategic Q2 renewal blocker for top accounts\"\nPRJ-21  active   owner=ivy.sato   health=on_track target=2026-05-28  name=\"Feature flag isolation\"          note=\"Reduces cross-tenant blast radius before SOC2 audit\"\nPRJ-17  active   owner=omar.reed  health=at_risk  target=2026-05-10  name=\"Credential exposure cleanup\"     note=\"Security workstream for leaked staging material\"\nPRJ-09  paused   owner=nora.park  health=paused   target=2026-07-01  name=\"Pipeline attribution v2\"          note=\"Deferred until billing export launch clears\"\n"
+
+  - name: "list_cycles"
+    description: "List active and upcoming Linear cycles for product and engineering teams."
+    inputSchema:
+      type: object
+      properties:
+        team_key:
+          type: string
+        include_upcoming:
+          type: boolean
+          default: true
+    response: "ENG-CYC-2026-09   team=ENG   name=\"Sprint 09\"  starts=2026-05-04 ends=2026-05-17 scope=42 completed=18 carryover=6\nENG-CYC-2026-10   team=ENG   name=\"Sprint 10\"  starts=2026-05-18 ends=2026-05-31 scope=31 completed=0  carryover=0\nSEC-CYC-2026-05   team=SEC   name=\"May hardening\" starts=2026-05-01 ends=2026-05-31 scope=19 completed=7 carryover=3\nPLAT-CYC-2026-08  team=PLAT  name=\"Platform 08\" starts=2026-05-06 ends=2026-05-19 scope=27 completed=9 carryover=2\n"
+
+  - name: "search_issues"
+    description: "Full-text search across Linear issue titles, descriptions, labels, and comments."
+    inputSchema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: "Search query, e.g. security, roadmap, token, checkout, customer name."
+        team_key:
+          type: string
+        limit:
+          type: integer
+          default: 20
+      required: ["query"]
+    response: "SEC-89    score=0.94  title=\"Rotate leaked webhook signing key in staging\" labels=security,credential-hygiene updated=2026-05-04T11:02:44Z\nENG-1247  score=0.81  title=\"Fix checkout retry storm after card decline\" labels=customer-impact,revenue updated=2026-05-04T15:38:12Z\nPLAT-338  score=0.73  title=\"Add tenant-scoped cache keys to feature flags\" labels=isolation,soc2 updated=2026-05-03T18:21:09Z\nPRJ-42    score=0.69  title=\"Enterprise checkout reliability\" type=project note=\"Strategic Q2 renewal blocker for top accounts\"\n"
