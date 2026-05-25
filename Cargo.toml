@@ -41,7 +41,7 @@ uuid = { version = "1", features = ["v4", "v5"] }
 # Server-side templates for the dashboard v2 surface. Compile-time error
 # checking on template syntax + zero-runtime-build, so the dashboard ships
 # inside the Rust binary rather than as a separate frontend project.
-minijinja = { version = "2.13", features = ["loader"] }
+minijinja = { version = "2.20", features = ["loader"] }
 
 # Postgres backend (opt-in via --features postgres). SQLite remains the
 # default storage for all use cases; Postgres unlocks pgvector + horizontal
