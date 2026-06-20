@@ -46,8 +46,14 @@ jobs:
           workspaces: |
             fuzz
 
+      # Install a prebuilt cargo-fuzz binary rather than building it from
+      # source. `cargo install --locked cargo-fuzz` started failing in CI when
+      # the latest nightly + a fresh dependency tree stopped compiling
+      # cargo-fuzz 0.13.2; a prebuilt binary sidesteps that toolchain coupling.
       - name: Install cargo-fuzz
-        run: cargo install --locked cargo-fuzz
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
 
       - name: Run ${{ matrix.target }} for 60s
         run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=60
