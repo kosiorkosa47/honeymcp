@@ -34,8 +34,12 @@ jobs:
       - uses: actions/checkout@v6
 
       # libfuzzer requires nightly Rust because it relies on -Z sanitizer
-      # flags that aren't stabilized. Pinned via the dtolnay action.
+      # flags that aren't stabilized. cargo-fuzz also rebuilds std/core with
+      # the sanitizer via -Zbuild-std, which needs the rust-src component
+      # (the minimal profile omits it, yielding "can't find crate for core").
       - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
 
       - uses: Swatinem/rust-cache@v2
         with:
