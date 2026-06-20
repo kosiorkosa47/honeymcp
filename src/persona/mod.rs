@@ -48,7 +48,11 @@ pub fn load_canaries_default(explicit: Option<&Path>) -> Result<CanaryMap> {
     }
     let default = Path::new("canaries.yaml");
     if default.exists() {
-        return load_canaries(default);
+        // Auto-discovered (not explicitly requested): tolerate a file that
+        // exists but won't parse — e.g. an empty bind-mount placeholder left
+        // by Docker when the host file is missing — by falling back to no
+        // canaries rather than refusing to boot.
+        return Ok(load_canaries(default).unwrap_or_default());
     }
     Ok(CanaryMap::new())
 }

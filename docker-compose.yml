@@ -30,7 +30,8 @@ services:
         max-file: "3"
 
   honeymcp:
-    image: honeymcp:0.3.3
+    build: .
+    image: honeymcp:0.7.0
 
     container_name: honeymcp
     restart: unless-stopped
@@ -59,6 +60,10 @@ services:
     volumes:
       - ./data:/var/lib/honeymcp
       - ./personas:/opt/honeymcp/personas:ro
+      # Real Thinkst canary tokens (gitignored). Mounted read-only; the binary
+      # auto-loads ./canaries.yaml from its WORKDIR. If the host file is absent
+      # the container still boots and {{canary.*}} renders realistic fakes.
+      - ./canaries.yaml:/opt/honeymcp/canaries.yaml:ro
     environment:
       - RUST_LOG=info,honeymcp=debug
     logging:
