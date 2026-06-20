@@ -629,6 +629,7 @@ mod tests {
             remote_addr: Some("203.0.113.7:54321".into()),
             user_agent: Some("nikto/2.5.0".into()),
             client_meta: None,
+            persona: Some("github-admin".into()),
             is_operator: false,
             detections_json: None,
         }

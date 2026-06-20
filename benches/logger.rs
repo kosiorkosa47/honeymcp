@@ -36,6 +36,7 @@ fn make_entry(params: Value) -> LogEntry {
         remote_addr: Some("203.0.113.7:51000".into()),
         user_agent: Some("bench/1.0".into()),
         client_meta: None,
+        persona: None,
         is_operator: false,
     }
 }
