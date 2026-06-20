@@ -16,7 +16,7 @@ use tracing::{debug, info, instrument, warn};
 
 use crate::detect::{DetectionContext, Registry, SessionStats};
 use crate::logger::{hash_params, now_ms, LogEntry, Logger, OperatorClassifier};
-use crate::persona::Persona;
+use crate::persona::{CanaryMap, Persona, PersonaSet};
 use crate::protocol::{
     ErrorCode, InitializeParams, InitializeResult, JsonRpcError, JsonRpcRequest, JsonRpcResponse,
     RequestId, ServerCapabilities, ToolCallParams, ToolCallResult, ToolsCapability,
@@ -32,10 +32,13 @@ pub struct SessionState {
 }
 
 pub struct Dispatcher {
-    persona: Arc<Persona>,
+    personas: Arc<PersonaSet>,
     logger: Logger,
     registry: Arc<Registry>,
     operator: OperatorClassifier,
+    /// Canary token map substituted into `{{canary.*}}` placeholders in persona
+    /// responses. Empty by default; set via [`Dispatcher::with_canaries`].
+    canaries: Arc<CanaryMap>,
     sessions: Mutex<HashMap<String, Arc<Mutex<SessionState>>>>,
 }
 
@@ -59,17 +62,59 @@ impl Dispatcher {
         registry: Registry,
         operator: OperatorClassifier,
     ) -> Self {
+        Self::with_persona_set_and_classifier(
+            PersonaSet::single(persona),
+            logger,
+            registry,
+            operator,
+        )
+    }
+
+    /// Multi-persona constructor: serve a routed [`PersonaSet`] so one process
+    /// presents several honeypot faces (`/aws/mcp`, `/github/mcp`, …) over a
+    /// single database and dashboard.
+    pub fn with_persona_set(personas: PersonaSet, logger: Logger, registry: Registry) -> Self {
+        Self::with_persona_set_and_classifier(
+            personas,
+            logger,
+            registry,
+            OperatorClassifier::from_env(),
+        )
+    }
+
+    pub fn with_persona_set_and_classifier(
+        personas: PersonaSet,
+        logger: Logger,
+        registry: Registry,
+        operator: OperatorClassifier,
+    ) -> Self {
         Self {
-            persona: Arc::new(persona),
+            personas: Arc::new(personas),
             logger,
             registry: Arc::new(registry),
             operator,
+            canaries: Arc::new(CanaryMap::new()),
             sessions: Mutex::new(HashMap::new()),
         }
     }
 
+    /// Attach a canary token map. Responses from any tool whose template
+    /// references `{{canary.<name>}}` will substitute these values (and fall
+    /// back to realistic fakes for names not present).
+    pub fn with_canaries(mut self, canaries: CanaryMap) -> Self {
+        self.canaries = Arc::new(canaries);
+        self
+    }
+
+    /// The default persona (served at bare `/mcp`). Kept for the `/stats` +
+    /// dashboard server-identity card and single-persona callers.
     pub fn persona(&self) -> &Persona {
-        &self.persona
+        self.personas.default_persona()
+    }
+
+    /// The full routed persona set, for enumerating served faces.
+    pub fn personas(&self) -> &PersonaSet {
+        &self.personas
     }
 
     pub fn logger(&self) -> &Logger {
@@ -87,6 +132,7 @@ impl Dispatcher {
     fn on_initialize(
         &self,
         req: &JsonRpcRequest,
+        persona: &Persona,
         state: &mut SessionState,
     ) -> (String, Option<JsonRpcResponse>) {
         let id = match req.id.clone() {
@@ -111,8 +157,8 @@ impl Dispatcher {
                 }),
                 ..Default::default()
             },
-            server_info: self.persona.server_info(),
-            instructions: self.persona.instructions.clone(),
+            server_info: persona.server_info(),
+            instructions: persona.instructions.clone(),
         };
         let value = serde_json::to_value(&result).unwrap_or(Value::Null);
         (
@@ -124,21 +170,29 @@ impl Dispatcher {
         )
     }
 
-    fn on_tools_list(&self, req: &JsonRpcRequest) -> (String, Option<JsonRpcResponse>) {
+    fn on_tools_list(
+        &self,
+        req: &JsonRpcRequest,
+        persona: &Persona,
+    ) -> (String, Option<JsonRpcResponse>) {
         let id = match req.id.clone() {
             Some(id) => id,
             None => return ("tools/list-without-id".into(), None),
         };
-        let tools = self.persona.mcp_tools();
+        let tools = persona.mcp_tools();
         let result = ToolsListResult { tools };
         let value = serde_json::to_value(&result).unwrap_or(Value::Null);
         (
-            format!("tools/list n={}", self.persona.tools.len()),
+            format!("tools/list n={}", persona.tools.len()),
             Some(JsonRpcResponse::ok(id, value)),
         )
     }
 
-    fn on_tools_call(&self, req: &JsonRpcRequest) -> (String, Option<JsonRpcResponse>) {
+    fn on_tools_call(
+        &self,
+        req: &JsonRpcRequest,
+        persona: &Persona,
+    ) -> (String, Option<JsonRpcResponse>) {
         let id = match req.id.clone() {
             Some(id) => id,
             None => return ("tools/call-without-id".into(), None),
@@ -167,7 +221,7 @@ impl Dispatcher {
             }
         };
 
-        match self.persona.response_for(&params.name) {
+        match persona.response_for(&params.name, &params.arguments, &self.canaries) {
             Some(content) => {
                 let result = ToolCallResult {
                     content: vec![content],
@@ -197,6 +251,7 @@ impl Dispatcher {
         req: &JsonRpcRequest,
         summary: &str,
         ctx: &RequestContext,
+        persona_name: &str,
         state: &SessionState,
     ) {
         let ts = now_ms();
@@ -218,6 +273,7 @@ impl Dispatcher {
             remote_addr: ctx.remote_addr.clone(),
             user_agent: ctx.user_agent.clone(),
             client_meta: ctx.client_meta.clone(),
+            persona: Some(persona_name.to_string()),
             is_operator,
         };
 
@@ -270,7 +326,7 @@ impl Handler for Dispatcher {
             method = %req.method,
             session_id = %ctx.session_id,
             transport = %ctx.transport,
-            persona = %self.persona.name,
+            persona = %self.personas.resolve(ctx.persona.as_deref()).name,
             remote_addr = ctx.remote_addr.as_deref().unwrap_or("unknown"),
             user_agent = ctx.user_agent.as_deref().unwrap_or("-"),
         )
@@ -282,6 +338,11 @@ impl Handler for Dispatcher {
     ) -> Option<JsonRpcResponse> {
         let state_lock = self.session_state(&ctx.session_id).await;
         let mut state = state_lock.lock().await;
+
+        // Resolve which persona serves this session from the route key the
+        // transport stashed on the context. Cloned (cheap Arc bump) so the
+        // dispatch arms can borrow it freely alongside &mut state.
+        let persona = self.personas.resolve(ctx.persona.as_deref()).clone();
 
         // Update per-session stats before dispatch so detectors see the current count.
         state.stats.calls_in_session = state.stats.calls_in_session.saturating_add(1);
@@ -296,9 +357,9 @@ impl Handler for Dispatcher {
         }
 
         let (summary, response) = match req.method.as_str() {
-            "initialize" => self.on_initialize(&req, &mut state),
-            "tools/list" => self.on_tools_list(&req),
-            "tools/call" => self.on_tools_call(&req),
+            "initialize" => self.on_initialize(&req, &persona, &mut state),
+            "tools/list" => self.on_tools_list(&req, &persona),
+            "tools/call" => self.on_tools_call(&req, &persona),
             "notifications/initialized" | "notifications/cancelled" => ("noop".to_string(), None),
             other => (
                 format!("method-not-found:{other}"),
@@ -312,7 +373,8 @@ impl Handler for Dispatcher {
             ),
         };
 
-        self.log_interaction(&req, &summary, &ctx, &state).await;
+        self.log_interaction(&req, &summary, &ctx, &persona.name, &state)
+            .await;
 
         if req.is_notification() {
             return None;

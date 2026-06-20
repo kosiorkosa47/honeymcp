@@ -39,7 +39,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use axum::{
     body::Bytes,
-    extract::{ConnectInfo, Query, State},
+    extract::{ConnectInfo, Path, Query, State},
     http::{self, HeaderMap, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
@@ -211,11 +211,23 @@ impl Transport for HttpTransport {
         // /stats, /dashboard, /healthz are cheap and widely probed; letting
         // those through unthrottled keeps the dashboard responsive during a
         // flood against /message.
+        // Each persona is reachable both at the bare endpoints (default persona)
+        // and under a `/<persona>/…` route prefix. The GET (SSE) and DELETE
+        // handlers are persona-agnostic — sessions key on session_id, not
+        // persona — so they are reused verbatim; only the POST paths, which
+        // actually dispatch and log, carry the persona route key.
         let message_routes = Router::new()
             .route("/message", post(message_handler))
             .route(
                 "/mcp",
                 post(mcp_post_handler)
+                    .get(mcp_sse_handler)
+                    .delete(mcp_delete_handler),
+            )
+            .route("/:persona/message", post(message_persona_handler))
+            .route(
+                "/:persona/mcp",
+                post(mcp_post_persona_handler)
                     .get(mcp_sse_handler)
                     .delete(mcp_delete_handler),
             )
@@ -263,6 +275,7 @@ impl Transport for HttpTransport {
             .merge(message_routes)
             .merge(dashboard_routes)
             .route("/sse", get(sse_handler))
+            .route("/:persona/sse", get(sse_handler))
             .route("/stats", get(stats_handler))
             .route("/version", get(version_handler))
             .route("/", get(banner_handler))
@@ -474,6 +487,29 @@ async fn message_handler(
     State(state): State<AppState>,
     body: Bytes,
 ) -> Response {
+    message_inner(None, q, remote, headers, state, body).await
+}
+
+/// Legacy `/message` under a persona route prefix (`/<persona>/message`).
+async fn message_persona_handler(
+    Path(persona): Path<String>,
+    Query(q): Query<SessionQuery>,
+    ConnectInfo(remote): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    body: Bytes,
+) -> Response {
+    message_inner(Some(persona), q, remote, headers, state, body).await
+}
+
+async fn message_inner(
+    persona: Option<String>,
+    q: SessionQuery,
+    remote: SocketAddr,
+    headers: HeaderMap,
+    state: AppState,
+    body: Bytes,
+) -> Response {
     let session_id = resolve_session_id(&q, &headers);
     let (user_agent, client_meta) = header_meta(&headers);
 
@@ -499,6 +535,7 @@ async fn message_handler(
         remote_addr: Some(remote_addr_from(&headers, remote)),
         user_agent,
         client_meta,
+        persona,
     };
 
     let response = state.handler.handle_request(req, ctx).await;
@@ -536,6 +573,29 @@ async fn mcp_post_handler(
     State(state): State<AppState>,
     body: Bytes,
 ) -> Response {
+    mcp_post_inner(None, q, remote, headers, state, body).await
+}
+
+/// Streamable HTTP POST under a persona route prefix (`/<persona>/mcp`).
+async fn mcp_post_persona_handler(
+    Path(persona): Path<String>,
+    Query(q): Query<SessionQuery>,
+    ConnectInfo(remote): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    body: Bytes,
+) -> Response {
+    mcp_post_inner(Some(persona), q, remote, headers, state, body).await
+}
+
+async fn mcp_post_inner(
+    persona: Option<String>,
+    q: SessionQuery,
+    remote: SocketAddr,
+    headers: HeaderMap,
+    state: AppState,
+    body: Bytes,
+) -> Response {
     let session_id = resolve_session_id(&q, &headers);
     let (user_agent, client_meta) = header_meta(&headers);
     let event_stream = wants_event_stream(&headers);
@@ -562,6 +622,7 @@ async fn mcp_post_handler(
         remote_addr: Some(remote_addr_from(&headers, remote)),
         user_agent,
         client_meta,
+        persona,
     };
 
     let response = state.handler.handle_request(req, ctx).await;

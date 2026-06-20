@@ -36,6 +36,12 @@ RUN printf '%s\n' '#!/bin/sh' 'exec curl -fsS --max-time 3 http://127.0.0.1:8080
         > /usr/local/bin/healthz \
  && chmod +x /usr/local/bin/healthz
 
+# Run from the persona/canary root so the binary auto-discovers a
+# `./canaries.yaml` mounted at /opt/honeymcp/canaries.yaml (gitignored real
+# Thinkst tokens). Absent or unparsable → placeholders render as realistic
+# fakes; the container still boots.
+WORKDIR /opt/honeymcp
+
 USER honeymcp
 EXPOSE 8080
 
@@ -43,4 +49,10 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
     CMD ["/usr/local/bin/healthz"]
 
 ENTRYPOINT ["/usr/local/bin/honeymcp"]
-CMD ["--transport","http","--http-addr","0.0.0.0:8080","--persona","/opt/honeymcp/personas/github-admin.yaml","--db","/var/lib/honeymcp/hive.db","--jsonl","/var/lib/honeymcp/hive.jsonl"]
+CMD ["--transport","http","--http-addr","0.0.0.0:8080", \
+     "--persona","aws=/opt/honeymcp/personas/aws-admin.yaml", \
+     "--persona","github=/opt/honeymcp/personas/github-admin.yaml", \
+     "--persona","vercel=/opt/honeymcp/personas/vercel-admin.yaml", \
+     "--persona","stripe=/opt/honeymcp/personas/stripe-finance.yaml", \
+     "--default-persona","aws", \
+     "--db","/var/lib/honeymcp/hive.db","--jsonl","/var/lib/honeymcp/hive.jsonl"]

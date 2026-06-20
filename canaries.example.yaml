@@ -1,0 +1,20 @@
+# Example canary token map. Copy to canaries.yaml (gitignored) and fill with
+# real Thinkst canarytokens.org "AWS keys" token values.
+#
+# Generate tokens at https://canarytokens.org -> "AWS keys" -> enter an alert
+# email + memo -> copy the access_key_id / secret_access_key / region.
+#
+# Persona YAML references these by name, e.g. {{canary.aws_file_akid}}. A
+# placeholder with no matching key here is replaced with a deterministic,
+# realistic-looking fake at render time, so the honeypot still presents a
+# credible response even before any real canaries are configured (it just
+# loses the second-stage "key was used" alert).
+
+canary:
+  aws_file_akid: "AKIAEXAMPLE0000000001"
+  aws_file_secret: "wJalrXUtnFEMIexampleEXAMPLEKEY00000000001"
+  aws_file_region: "us-east-1"
+
+  aws_sm_akid: "AKIAEXAMPLE0000000002"
+  aws_sm_secret: "wJalrXUtnFEMIexampleEXAMPLEKEY00000000002"
+  aws_sm_region: "us-east-1"

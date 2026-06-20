@@ -8,6 +8,12 @@
 *.jsonl
 .DS_Store
 
+# Real canary token values (Thinkst canarytokens.org). NEVER commit — the
+# committed canaries.example.yaml documents the shape with dummy values.
+canaries.yaml
+canaries.toml
+/shots/
+
 # Local tooling state, never commit
 .claude/
 .context-memory/

@@ -25,6 +25,10 @@ pub struct RequestContext {
     pub remote_addr: Option<String>,
     pub user_agent: Option<String>,
     pub client_meta: Option<Value>,
+    /// Persona route key selected by the transport from the URL path
+    /// (`/<key>/mcp`). `None` resolves to the default persona — used by bare
+    /// `/mcp`, the legacy `/message` + `/sse` endpoints, and stdio.
+    pub persona: Option<String>,
 }
 
 impl RequestContext {
@@ -35,6 +39,7 @@ impl RequestContext {
             remote_addr: None,
             user_agent: None,
             client_meta: None,
+            persona: None,
         }
     }
 }

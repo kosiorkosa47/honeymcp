@@ -29,6 +29,7 @@ fn entry(
         remote_addr: Some("203.0.113.7:51000".into()),
         user_agent: Some("mitre-test/1.0".into()),
         client_meta: None,
+        persona: None,
         is_operator: false,
     };
     let s = stats_overrides.unwrap_or_default();

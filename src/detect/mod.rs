@@ -159,6 +159,7 @@ pub(crate) mod testing {
             remote_addr: None,
             user_agent: None,
             client_meta: None,
+            persona: None,
             is_operator: false,
         }
     }

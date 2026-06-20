@@ -120,6 +120,7 @@ fn bench_handle_request(c: &mut Criterion) {
                         remote_addr: Some("127.0.0.1:0".to_string()),
                         user_agent: Some("bench/1.0".to_string()),
                         client_meta: None,
+                        persona: None,
                     };
 
                     let start = std::time::Instant::now();

@@ -564,6 +564,7 @@ mod tests {
             remote_addr: Some("203.0.113.7:51000".into()),
             user_agent: None,
             client_meta: None,
+            persona: None,
             is_operator: false,
             detections_json: None,
         };
@@ -588,6 +589,7 @@ mod tests {
             remote_addr: None,
             user_agent: None,
             client_meta: None,
+            persona: None,
             is_operator: false,
             detections_json: Some(
                 r#"[{"detector":"shell_injection_patterns","category":"command_injection","severity":"high","evidence":"e","mitre_techniques":"[\"T1059\"]"}]"#
