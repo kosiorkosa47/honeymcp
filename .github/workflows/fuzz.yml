@@ -46,11 +46,21 @@ jobs:
           workspaces: |
             fuzz
 
+      # Install a prebuilt cargo-fuzz binary rather than building it from
+      # source. `cargo install --locked cargo-fuzz` started failing in CI when
+      # the latest nightly + a fresh dependency tree stopped compiling
+      # cargo-fuzz 0.13.2; a prebuilt binary sidesteps that toolchain coupling.
       - name: Install cargo-fuzz
-        run: cargo install --locked cargo-fuzz
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
 
+      # Force the gnu target. The prebuilt cargo-fuzz binary is the musl build,
+      # and cargo-fuzz otherwise infers the build target from its own triple —
+      # building for musl, whose static libc is incompatible with the address
+      # sanitizer (and whose std isn't installed on the runner).
       - name: Run ${{ matrix.target }} for 60s
-        run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=60
+        run: cargo +nightly fuzz run ${{ matrix.target }} --target x86_64-unknown-linux-gnu -- -max_total_time=60
 
       # Upload any crash artifacts the run produced so we can debug failed
       # CI runs without re-running locally. Empty upload is fine — the
