@@ -13,11 +13,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::logger::LogEntry;
 
+pub mod aws_intent;
 pub mod cve_59536;
+pub mod path_traversal;
 pub mod prompt_injection;
 pub mod recon;
+pub mod scanner_fingerprint;
 pub mod secret_exfil;
 pub mod shell_injection;
+pub mod ssrf_imds;
 pub mod tool_enumeration;
 pub mod unicode_anomaly;
 
@@ -112,6 +116,10 @@ impl Registry {
                 Box::new(shell_injection::ShellInjectionDetector),
                 Box::new(recon::ReconDetector),
                 Box::new(secret_exfil::SecretExfilDetector),
+                Box::new(ssrf_imds::SsrfImdsDetector),
+                Box::new(path_traversal::PathTraversalDetector),
+                Box::new(aws_intent::AwsIntentDetector),
+                Box::new(scanner_fingerprint::ScannerFingerprintDetector),
                 Box::new(cve_59536::Cve59536Detector),
                 Box::new(unicode_anomaly::UnicodeAnomalyDetector),
                 Box::new(tool_enumeration::ToolEnumerationDetector),

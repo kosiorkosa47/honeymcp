@@ -21,7 +21,7 @@ I built honeymcp because there's no public record of what attackers actually sen
 
 It's one Rust binary. About 15 MB, SQLite on disk, fits in 256 MiB of RAM. You run it, point DNS, and it answers MCP handshakes the way a real server would. Personas are YAML. I ship four out of the box (`postgres-admin`, `github-admin`, `vercel-admin`, `stripe-finance`) covering the surfaces attackers actually go after: source code, deployments, environment variables, financial data. Anyone scanning the internet for MCP endpoints gets a full conversation with fake tools and canned responses that hold up under multi-turn interrogation.
 
-What lands in SQLite: timestamp, method, IP, User-Agent, client name and version, the `Mcp-Session-Id` they used, the `MCP-Protocol-Version` they claimed, and a SHA-256 of the raw params so reruns correlate. Seven detectors tag events at write time, so you can grep for "prompt-injection traffic that also did tool-enumeration" without scanning the whole DB.
+What lands in SQLite: timestamp, method, IP, User-Agent, client name and version, the `Mcp-Session-Id` they used, the `MCP-Protocol-Version` they claimed, and a SHA-256 of the raw params so reruns correlate. Eleven detectors tag events at write time, so you can grep for "prompt-injection traffic that also did tool-enumeration" without scanning the whole DB.
 
 It's not a proxy. It won't protect your production MCP server. It's a trap you put on the internet to learn from. `GET /` returns a plain-text banner saying exactly that with a GDPR erasure contact. `GET /dashboard` is a server-rendered analyst surface (Attack Story Timeline grouped per session + per-session MCP Sequence Diagram SVG at `/dashboard/sequence/<id>.svg`); operator traffic is filtered out by default with a `?include_operator=true` toggle. No admin panel, no write path exposed to the network.
 
@@ -42,7 +42,7 @@ MCP is a young protocol with a rapidly growing attack surface: **tool poisoning*
 - Ships **four personas** out of the box: `postgres-admin`, `github-admin`, `vercel-admin`, `stripe-finance` - covering source code, deployments, environment variables, and financial data.
 - Ships as a **Docker image** for one-command deploy; release builds are cosign-keyless-signed with SPDX + CycloneDX SBOMs attached and **SLSA Level 3 build provenance** verifiable via `gh attestation verify` (recipe in [`docs/SLSA.md`](docs/SLSA.md)).
 - Serves an **operator banner** (research-honeypot disclosure + GDPR contact) at `GET /` and a server-rendered **analyst dashboard** at `/dashboard` (Attack Story Timeline + per-session MCP Sequence Diagram, all assets bundled in the binary, design in [`docs/dashboard-v2-design.md`](docs/dashboard-v2-design.md)).
-- Runs **seven threat detectors** (prompt injection, shell injection, CVE-2025-59536-class hook injection, secret exfil, unicode anomaly, recon, tool enumeration) on every request, tagging events at write time. Each detection carries its **MITRE ATT&CK / ATLAS technique IDs** in the `detections.mitre_techniques` column so SIEM consumers can pivot on technique without re-deriving the mapping. Full mapping in [`docs/MITRE-MAPPING.md`](docs/MITRE-MAPPING.md).
+- Runs **eleven threat detectors** (prompt injection, shell injection, CVE-2025-59536-class hook injection, secret exfil, unicode anomaly, recon, tool enumeration, IMDS-SSRF, path traversal, AWS tool-intent, scanner fingerprinting) on every request, tagging events at write time. Each detection carries its **MITRE ATT&CK / ATLAS technique IDs** in the `detections.mitre_techniques` column so SIEM consumers can pivot on technique without re-deriving the mapping. Full mapping in [`docs/MITRE-MAPPING.md`](docs/MITRE-MAPPING.md).
 - Logs every request/response to **SQLite** (primary, queryable) and optionally mirrors to **JSONL** (grep/jq-friendly), including timestamp, method, SHA-256 of params, raw params, client name/version, session id, transport, remote address, and User-Agent.
 - **Tags operator traffic** at write time (`is_operator` column). `/stats` excludes probes and validation curls by default so any number a third party reads is the external-only corpus; pass `?include_operator=true` to fold them back in.
 - **Exposes build provenance** at `GET /version` (crate version, 12-char git short sha with a `-dirty` suffix when relevant, RFC3339 build time). Every deploy is verifiable in one curl.
@@ -132,9 +132,10 @@ src/
   protocol/    JSON-RPC 2.0 + MCP payload types
   transport/   Transport trait, stdio + http (Streamable + legacy SSE)
   persona/     YAML persona loader + validator
-  detect/      Seven detectors (prompt_injection, shell_injection,
+  detect/      Eleven detectors (prompt_injection, shell_injection,
                cve_59536, secret_exfil, unicode_anomaly, recon,
-               tool_enumeration)
+               tool_enumeration, ssrf_imds, path_traversal,
+               aws_intent, scanner_fingerprint)
   logger/      SQLite + JSONL structured logging
   server.rs    Session / request dispatcher
   main.rs      CLI entry (clap)
