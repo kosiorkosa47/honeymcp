@@ -10,6 +10,7 @@ on:
     paths:
       - "Cargo.lock"
       - "Cargo.toml"
+      - "rustinel.toml"
       - ".github/workflows/rustinel.yml"
 
 permissions:
@@ -38,4 +39,5 @@ jobs:
           command: diff
           base-lockfile: base.Cargo.lock
           head-lockfile: Cargo.lock
+          policy: rustinel.toml
           online-metadata: "true"

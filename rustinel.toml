@@ -1,0 +1,61 @@
+# rustinel supply-chain policy for honeymcp — balanced profile.
+# https://github.com/kosiorkosa47/rustinel
+#
+# Scope of this policy: it does NOT silence rustinel. Signals still appear in
+# the report and any NEW native dep, build script, typosquat, phone-home,
+# license change, or advisory still drives the decision. It only records the
+# specific dependencies a human has already reviewed and accepted, so the CI
+# comment flags deltas instead of perpetually asking to review the same two
+# load-bearing crates.
+version = 1
+
+[profile]
+name = "balanced"
+
+[risk]
+max_project_score = 70
+max_package_score = 85
+fail_on_delta_above = 35
+warn_on_delta_above = 10
+
+[advisories]
+fail_on = ["critical", "high"]
+warn_on = ["medium", "low"]
+ignore = []
+
+[signals]
+fail_on_yanked = true
+warn_on_build_rs = false
+require_review_on_build_rs = false
+require_review_on_native_ffi = true
+warn_on_unsafe_increase = true
+fail_on_denied_license = true
+warn_on_unknown_license = true
+fail_on_unknown_license = false
+
+# Mirrors deny.toml so cargo-deny and rustinel agree on what's acceptable.
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "MPL-2.0",
+]
+deny = ["GPL-3.0", "AGPL-3.0"]
+
+# Reviewed and accepted native/FFI dependencies. Both are essential and among
+# the most-audited crates in the ecosystem; their signals still show in the
+# report — they just no longer force "review required". Anything new that is
+# native/FFI still trips the guard.
+#   ring           — crypto backbone of rustls (TLS for the reqwest client)
+#   libsqlite3-sys — the SQLite C binding behind rusqlite (the event store)
+[allow]
+crates = ["ring", "libsqlite3-sys"]
+
+[deny]
+crates = []
