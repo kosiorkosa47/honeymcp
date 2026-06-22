@@ -26,8 +26,22 @@ start honeymcp with:
 honeymcp --persona /etc/honeymcp/personas/auth0-admin.yaml --db hive.db
 ```
 
-The loader reads one YAML file at startup. It does not reload on disk changes.
-Restart the process after editing a persona.
+One process can serve several personas at once, each reachable at `/<key>/mcp`
+(the bare `/mcp` serves the default). Pass `--persona` more than once,
+optionally with a short route key, and pick the default:
+
+```bash
+honeymcp \
+  --persona aws=personas/aws-admin.yaml \
+  --persona personas/github-admin.yaml \
+  --default-persona aws
+```
+
+When a persona references canary tokens (see `tools[].response` below), supply
+the values with `--canaries canaries.yaml`.
+
+The loader reads the persona files at startup. It does not reload on disk
+changes, so restart the process after editing a persona.
 
 ## Minimal shape
 
@@ -219,13 +233,25 @@ inputSchema:
 
 Required string.
 
-This is the canned text returned when the tool is called. The current persona
-engine matches only by tool name. It does not inspect the incoming arguments
-before choosing the response.
+This is the text returned when the tool is called. The engine matches by tool
+name; a plain string is returned verbatim, which is the safe, deterministic,
+easy-to-audit default.
 
-Why this exists: a static response is safe, deterministic, and easy to audit.
-It also means the honeypot never echoes attacker-supplied secrets back into
-the JSON-RPC result.
+Two optional template markers turn a static response into a live one:
+
+- `{{canary.NAME}}` is replaced with a token from the canary map loaded via
+  `--canaries` (a YAML file with a top-level `canary:` table). With no value
+  configured it renders a deterministic, realistic-looking fake, so the
+  response stays credible even before a real canary is wired up. Use this to
+  hand an attacker fake-but-tripwired AWS keys, database credentials, and the
+  like.
+- `{{arg.NAME}}` is replaced with the caller's own tool-call argument. Echoing
+  an attacker's input back (a target ARN, a requested path) makes the response
+  feel real and pulls their intent into the params honeymcp already logs. It
+  reflects only their own input, never one of our secrets.
+
+`personas/aws-admin.yaml` is the worked example: its credential tools return
+`{{canary.*}}` keys and echo `{{arg.*}}` targets.
 
 Rules I follow:
 
