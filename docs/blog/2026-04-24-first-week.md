@@ -92,3 +92,61 @@ relevant fact. "21 read_file calls" was prettier and false.
 The repo is at https://github.com/kosiorkosa47/honeymcp. If you run an
 MCP server publicly and want to compare notes, the contact is in
 [`SECURITY.md`](https://github.com/kosiorkosa47/honeymcp/blob/main/SECURITY.md).
+
+---
+
+## Update: the corpus arrived
+
+Week one teed up week six. Here is what the weeks since brought.
+
+Discovery happened the way the first post predicted. Censys kept
+indexing, and something new showed up that did not exist back then: a
+dedicated "MCP Scan Client" user agent, a scanner built specifically to
+find MCP servers. The benign crawler layer for this protocol is now its
+own thing, separate from the generic internet-wide scanners.
+
+Then the first targeted one arrived. A host on China Telecom
+(`125.81.163.95`) connected and, before it ran the `initialize`
+handshake, started calling `read_file`. That single detail is the whole
+story. A legitimate MCP client always introduces itself first. Skipping
+the handshake means there is no agent on the other end, just a script
+firing blind.
+
+What it asked for, one path at a time, straight down a list:
+
+```
+/root/.aws/credentials
+/home/ubuntu/.aws/credentials
+/home/ec2-user/.aws/credentials
+/proc/self/environ
+/proc/1/environ
+```
+
+AWS keys and the container's environment variables. The honeypot tagged
+every one of those calls with `recon_pattern` (a tool call before the
+handshake) and `secret_exfil_targets`. So the honest week-one finding,
+"no targeted attacker found a fresh public MCP server", had an expiry
+date, and it expired.
+
+A few things changed in the sensor between then and now, driven by what
+landed:
+
+- The operator-traffic filter promised in week one shipped. Every event
+  carries `is_operator`, set at write time, so the public corpus is
+  external-only by default.
+- The honeypot now serves several personas from one process, including
+  an AWS ops persona whose credential responses are live canary tokens.
+  When an attacker pulls those fake keys and tries them against AWS, the
+  second-stage alert fires with their real source IP. The trap reaches
+  past the honeypot itself.
+- Telemetry widened. More request headers are captured, and non-MCP scan
+  paths like `/.env` and `/.git/config` are now logged and run through
+  the detectors, so a credential-file scan trips `secret_exfil` even
+  when it never speaks MCP.
+- The detector set grew from seven to eleven, with cloud-specific rules
+  for instance-metadata SSRF, path traversal, and AWS tool intent.
+
+The week-one lesson holds. The number that mattered was never the count,
+it was the shape: who finds a fresh MCP server, and what they reach for
+first. Now that someone targeted has shown up, the answer is that they
+reach for your cloud credentials before they even say hello.

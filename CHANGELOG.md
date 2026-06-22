@@ -2,6 +2,54 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Multi-persona routing.** One process now serves several personas, selected
+  by URL path (`/<persona>/mcp`), over a single database and dashboard. The
+  bare `/mcp` serves the default; an unknown key falls back to the default
+  rather than 404. Each event records which persona served it. CLI:
+  `--persona [key=]path` (repeatable) and `--default-persona`.
+- **AWS persona with canary credentials.** `personas/aws-admin.yaml` exposes
+  cloud-ops tools whose required arguments pull attacker intent into the logged
+  params; credential-bearing responses carry canary tokens. Persona responses
+  gained templating: `{{canary.*}}` (from a gitignored canary map, with a
+  deterministic realistic fallback) and `{{arg.*}}` (echoes the caller's own
+  arguments). New `--canaries` flag plus `./canaries.yaml` auto-discovery.
+- **Wider request telemetry.** A curated allowlist of high-signal headers
+  (`authorization`, `x-api-key`, `origin`, `referer`, `cf-connecting-ip`,
+  `cf-ipcountry`, `x-real-ip`, `true-client-ip`, `via`, `sec-*`) is captured
+  into `client_meta`, each value truncated.
+- **Non-MCP probe logging.** Requests to unmodelled paths (`/.env`,
+  `/.git/config`, `/admin`, and the like) are logged as `probe` events and run
+  through the detector registry, so a credential-file scan trips `secret_exfil`
+  even without an MCP handshake. The request body is not buffered.
+- **Four cloud-attack detectors** (registry now eleven): `ssrf_imds` (cloud
+  instance metadata endpoints), `path_traversal` (`../` and URL-encoded
+  variants), `aws_intent` (per-tool credential-access vs discovery
+  classification), and `scanner_fingerprint` (Censys, Shodan, MCP-specific and
+  raw-HTTP clients). Each carries MITRE ATT&CK mappings; see
+  [`docs/MITRE-MAPPING.md`](docs/MITRE-MAPPING.md).
+
+### Changed
+
+- The `events` table gained a `persona` column (added in place, backwards
+  compatible) so the dashboard and exports can attribute and filter by persona.
+
+### CI / infrastructure
+
+- **rustinel supply-chain risk diff** runs on dependency PRs and posts a sticky
+  comment alongside cargo-audit / cargo-deny; a reviewed `rustinel.toml`
+  baselines the two native dependencies (`ring`, `libsqlite3-sys`).
+- **Box auto-deploy.** A systemd timer pulls, rebuilds and restarts the live
+  honeypot whenever `main` advances and every CI check-run on that commit is
+  green. Scripts versioned under [`deploy/`](deploy/).
+
+### Fixed
+
+- The `fuzz-smoke` workflow installs a prebuilt `cargo-fuzz` and builds the
+  fuzz targets for the gnu triple, fixing breakage from the latest nightly and
+  the musl static-libc sanitizer incompatibility.
+
 ## [0.7.0] - 2026-05-05
 
 The enterprise-grade hardening release. Seven PRs landed in one sitting,
