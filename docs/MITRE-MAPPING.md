@@ -20,6 +20,11 @@ direct evidence link, not a "could-conceivably-fit" association.
 | `cve_2025_59536_config_injection` | `T1190`, `T1059` | Exploit Public-Facing Application — CVE-2025-59536 is a remote config injection in `mcp-remote` chaining to RCE |
 | `unicode_anomaly` | `T1027`, `T1036.005` | Obfuscated Files or Information / Match Legitimate Resource Name — bidi marks + tag-block + homoglyph subsets |
 | `tool_enumeration` | `T1518`, `T1083` | Software Discovery — calling many distinct tools per session maps installed capabilities |
+| `ssrf_imds` | `T1552.005`, `T1552` | Unsecured Credentials — Cloud Instance Metadata API; matches IMDS endpoints (`169.254.169.254`, `metadata.google.internal`, ECS / Alibaba) in tool arguments |
+| `path_traversal` | `T1083`, `T1006` | File and Directory Discovery / Direct Volume Access — `../`, `..\` and URL-encoded traversal sequences, independent of the final target |
+| `aws_intent` (credential access) | `T1552`, `T1555.006`, `T1098.001`, `T1078.004`, `T1548`, `T1530`, `T1552.001` | Secrets Manager / SSM read, IAM access-key creation, STS AssumeRole, S3 object pull, persona file read — classified per AWS tool name |
+| `aws_intent` (discovery) | `T1580`, `T1087.004` | Cloud Infrastructure Discovery / Cloud Account Discovery — `list_secrets`, `list_iam_users`, `describe_instances`, `get_caller_identity` |
+| `scanner_fingerprint` | `T1595`, `T1592` | Active Scanning / Gather Victim Host Information — labels Censys, Shodan, MCP-specific scanners and raw HTTP clients once per session |
 
 ## ATLAS techniques (LLM-specific)
 

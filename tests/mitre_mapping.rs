@@ -192,6 +192,36 @@ fn tool_enumeration_emits_t1518() {
 }
 
 #[test]
+fn ssrf_imds_emits_t1552_005() {
+    assert_detector_emits_techniques(
+        "tools/call",
+        json!({"name":"fetch_url","arguments":{"url":"http://169.254.169.254/latest/meta-data/iam/security-credentials/"}}),
+        SessionStats::default(),
+        "ssrf_imds",
+    );
+}
+
+#[test]
+fn path_traversal_emits_t1083() {
+    assert_detector_emits_techniques(
+        "tools/call",
+        json!({"name":"read_file","arguments":{"path":"../../../../etc/shadow"}}),
+        SessionStats::default(),
+        "path_traversal",
+    );
+}
+
+#[test]
+fn aws_intent_emits_cloud_techniques() {
+    assert_detector_emits_techniques(
+        "tools/call",
+        json!({"name":"get_secret_value","arguments":{"secret_id":"prod/iam/deploy-keys"}}),
+        SessionStats::default(),
+        "aws_intent",
+    );
+}
+
+#[test]
 fn technique_id_validator_rejects_typos() {
     // Sanity-check the validator itself so a future loosening is loud.
     assert!(looks_like_technique_id("T1059"));
