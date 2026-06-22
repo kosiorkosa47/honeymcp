@@ -1,0 +1,41 @@
+name: rustinel
+
+# Defensive supply-chain risk diff on every PR that touches the dependency
+# graph. rustinel flags typosquats, phone-home build.rs, secret-exfil patterns
+# and advisory matches, then posts a sticky comment showing how the PR changes
+# supply-chain risk. Complements cargo-audit / cargo-deny with behaviour-level
+# signal. Non-gating by default: it reports, it doesn't block the merge.
+on:
+  pull_request:
+    paths:
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - ".github/workflows/rustinel.yml"
+
+permissions:
+  contents: read
+  pull-requests: write # sticky risk-diff comment
+
+jobs:
+  supply-chain:
+    name: rustinel supply-chain diff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so the PR base lockfile is reachable
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Pull the dependency graph as it stood on the base branch so rustinel
+      # can diff against it. Falls back to the head lockfile for first-time or
+      # detached cases (a no-op diff rather than a hard failure).
+      - name: Resolve base lockfile
+        run: git show "origin/${{ github.base_ref }}:Cargo.lock" > base.Cargo.lock || cp Cargo.lock base.Cargo.lock
+
+      - uses: kosiorkosa47/rustinel@v0
+        with:
+          command: diff
+          base-lockfile: base.Cargo.lock
+          head-lockfile: Cargo.lock
+          online-metadata: "true"
