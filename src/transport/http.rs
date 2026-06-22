@@ -899,6 +899,37 @@ mod tests {
         assert!(meta.is_none());
     }
 
+    #[tokio::test]
+    async fn unmatched_route_hits_probe_fallback_and_returns_404() {
+        let handler = Arc::new(CapturingHandler {
+            last_ctx: tokio::sync::Mutex::new(None),
+        });
+        let state = AppState {
+            handler,
+            stats: None,
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+        };
+        let app = Router::new()
+            .route("/mcp", post(mcp_post_handler))
+            .fallback(probe_handler)
+            .with_state(state);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            .unwrap();
+        });
+
+        // A classic credential-file scan to an unmodeled path.
+        let resp = raw_get(&addr, "/.env", &[("User-Agent", "scanner/1.0")]).await;
+        assert_eq!(resp.status, 404);
+    }
+
     struct CapturingHandler {
         last_ctx: tokio::sync::Mutex<Option<RequestContext>>,
     }
