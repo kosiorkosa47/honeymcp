@@ -254,14 +254,13 @@ impl Dispatcher {
         persona_name: &str,
         state: &SessionState,
     ) {
-        let ts = now_ms();
         let is_operator = self.operator.classify(
             ctx.user_agent.as_deref(),
             ctx.remote_addr.as_deref(),
             ctx.client_meta.as_ref(),
         );
         let entry = LogEntry {
-            timestamp_ms: ts,
+            timestamp_ms: now_ms(),
             method: req.method.clone(),
             params_hash: hash_params(&req.params),
             params: req.params.clone(),
@@ -276,7 +275,15 @@ impl Dispatcher {
             persona: Some(persona_name.to_string()),
             is_operator,
         };
+        self.persist_and_detect(entry, &state.stats).await;
+    }
 
+    /// Persist one event and run the detector registry against it. Shared by
+    /// the JSON-RPC dispatch path and the non-MCP probe path so both land in
+    /// the same events + detections tables (and the same dashboard + STIX
+    /// export).
+    async fn persist_and_detect(&self, entry: LogEntry, stats: &SessionStats) {
+        let ts = entry.timestamp_ms;
         let event_id = match self.logger.record(&entry).await {
             Ok(id) => Some(id),
             Err(e) => {
@@ -284,18 +291,18 @@ impl Dispatcher {
                 None
             }
         };
-        debug!(method = %req.method, transport = %ctx.transport, "logged event");
+        debug!(method = %entry.method, "logged event");
 
         if let Some(event_id) = event_id {
             if !self.registry.is_empty() {
                 let detections = self.registry.analyze_all(&DetectionContext {
                     entry: &entry,
-                    stats: &state.stats,
+                    stats,
                 });
                 if !detections.is_empty() {
                     info!(
                         count = detections.len(),
-                        method = %req.method,
+                        method = %entry.method,
                         "threat detections fired"
                     );
                     if let Err(e) = self
@@ -391,6 +398,47 @@ impl Handler for Dispatcher {
             }),
         }
     }
+
+    async fn log_probe(
+        &self,
+        ctx: RequestContext,
+        http_method: &str,
+        path: &str,
+        query: Option<String>,
+    ) {
+        let is_operator = self.operator.classify(
+            ctx.user_agent.as_deref(),
+            ctx.remote_addr.as_deref(),
+            ctx.client_meta.as_ref(),
+        );
+        // method="probe" (constant) keeps the dashboard's by-method grouping
+        // sane; the path/method/query live in params, where the existing
+        // detectors still see them (a `/.env` probe trips secret_exfil).
+        let params = serde_json::json!({
+            "http_method": http_method,
+            "path": path,
+            "query": query,
+        });
+        let entry = LogEntry {
+            timestamp_ms: now_ms(),
+            method: "probe".to_string(),
+            params_hash: hash_params(&Some(params.clone())),
+            params: Some(params),
+            client_name: None,
+            client_version: None,
+            session_id: ctx.session_id.clone(),
+            response_summary: format!("probe {http_method} {path}"),
+            transport: Some(ctx.transport.to_string()),
+            remote_addr: ctx.remote_addr.clone(),
+            user_agent: ctx.user_agent.clone(),
+            client_meta: ctx.client_meta.clone(),
+            // A probe didn't reach any persona — it hit a non-MCP path.
+            persona: None,
+            is_operator,
+        };
+        self.persist_and_detect(entry, &SessionStats::default())
+            .await;
+    }
 }
 
 #[cfg(test)]
@@ -468,5 +516,21 @@ tools:
         let resp = d.handle_request(req, ctx).await.expect("response");
         assert!(resp.error.is_some());
         assert_eq!(resp.error.unwrap().code, ErrorCode::MethodNotFound as i32);
+    }
+
+    #[tokio::test]
+    async fn log_probe_records_event_and_fires_detectors() {
+        let (d, _dir) = make_dispatcher().await;
+        let mut ctx = RequestContext::new("probe-1", "http");
+        ctx.remote_addr = Some("203.0.113.9:40000".into());
+        // A scan for a credential file. The path lands in params, where the
+        // secret_exfil detector still sees it.
+        d.log_probe(ctx, "GET", "/.env", None).await;
+
+        assert_eq!(d.logger.count_events(true).await.unwrap(), 1);
+        assert!(
+            d.logger.count_detections(true).await.unwrap() >= 1,
+            "a /.env probe should trip secret_exfil"
+        );
     }
 }
