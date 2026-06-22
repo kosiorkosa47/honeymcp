@@ -52,6 +52,20 @@ pub trait Handler: Send + Sync + 'static {
         req: JsonRpcRequest,
         ctx: RequestContext,
     ) -> Option<JsonRpcResponse>;
+
+    /// Log a non-MCP probe — a request to a path the honeypot doesn't model
+    /// as MCP (`/.env`, `/.git/config`, `/admin`, `/wp-login.php`, …). Lets a
+    /// transport feed the broad recon surface into the same events +
+    /// detections pipeline. Default is a no-op so handlers that don't care
+    /// aren't forced to implement it.
+    async fn log_probe(
+        &self,
+        _ctx: RequestContext,
+        _http_method: &str,
+        _path: &str,
+        _query: Option<String>,
+    ) {
+    }
 }
 
 /// A transport drives the event loop: pull requests, dispatch to handler, write responses.

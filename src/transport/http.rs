@@ -120,34 +120,68 @@ fn resolve_session_id(q: &SessionQuery, headers: &HeaderMap) -> String {
         .unwrap_or_else(generate_session_id)
 }
 
+/// High-signal headers captured into `client_meta` beyond the always-on trio
+/// (`x_forwarded_for`, `mcp_protocol_version`, `accept`). These carry
+/// attacker-supplied credentials (`authorization`, `x-api-key`), proxy/CDN
+/// provenance and the real client IP (`x-real-ip`, `cf-connecting-ip`,
+/// `cf-ipcountry`, `true-client-ip`, `via`), and browser/client fingerprint
+/// hints (`origin`, `referer`, `accept-language`, `accept-encoding`, `sec-*`).
+const CAPTURED_HEADERS: &[&str] = &[
+    "authorization",
+    "x-api-key",
+    "origin",
+    "referer",
+    "accept-language",
+    "accept-encoding",
+    "content-type",
+    "x-real-ip",
+    "cf-connecting-ip",
+    "cf-ipcountry",
+    "cf-ray",
+    "true-client-ip",
+    "x-client-ip",
+    "via",
+    "x-requested-with",
+    "sec-fetch-mode",
+    "sec-fetch-site",
+    "sec-ch-ua",
+];
+
+/// Per-header value cap so a hostile client can't bloat the JSONB column.
+const MAX_HEADER_VALUE_LEN: usize = 512;
+
 fn header_meta(headers: &HeaderMap) -> (Option<String>, Option<Value>) {
     let ua = headers
         .get("user-agent")
         .and_then(|v| v.to_str().ok())
         .map(String::from);
-    let xff = headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .map(String::from);
-    let mcp_proto = headers
-        .get("mcp-protocol-version")
-        .and_then(|v| v.to_str().ok())
-        .map(String::from);
-    let accept = headers
-        .get("accept")
-        .and_then(|v| v.to_str().ok())
-        .map(String::from);
 
     let mut meta = serde_json::Map::new();
-    if let Some(x) = xff {
-        meta.insert("x_forwarded_for".into(), Value::String(x));
+
+    // Kept verbatim under these exact keys: resolve_client_ip + the dashboard
+    // read `x_forwarded_for`, and detectors/exporters key on the other two.
+    if let Some(x) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
+        meta.insert("x_forwarded_for".into(), Value::String(x.to_string()));
     }
-    if let Some(v) = mcp_proto {
-        meta.insert("mcp_protocol_version".into(), Value::String(v));
+    if let Some(v) = headers
+        .get("mcp-protocol-version")
+        .and_then(|v| v.to_str().ok())
+    {
+        meta.insert("mcp_protocol_version".into(), Value::String(v.to_string()));
     }
-    if let Some(a) = accept {
-        meta.insert("accept".into(), Value::String(a));
+    if let Some(a) = headers.get("accept").and_then(|v| v.to_str().ok()) {
+        meta.insert("accept".into(), Value::String(a.to_string()));
     }
+
+    // Curated allowlist. Key is the header name with '-' -> '_'; the value is
+    // truncated to keep the row bounded.
+    for name in CAPTURED_HEADERS {
+        if let Some(val) = headers.get(*name).and_then(|v| v.to_str().ok()) {
+            let truncated: String = val.chars().take(MAX_HEADER_VALUE_LEN).collect();
+            meta.insert(name.replace('-', "_"), Value::String(truncated));
+        }
+    }
+
     let client_meta = if meta.is_empty() {
         None
     } else {
@@ -172,6 +206,37 @@ fn remote_addr_from(headers: &HeaderMap, peer: SocketAddr) -> String {
         .and_then(|s| s.split(',').next().map(|p| p.trim().to_string()))
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| peer.to_string())
+}
+
+/// Fallback for any route the honeypot doesn't model as MCP. Scanners hammer
+/// paths like `/.env`, `/.git/config`, `/admin`, `/wp-login.php`; logging each
+/// as a `probe` event captures the broad recon surface and runs the same
+/// detectors (so a `/.env` probe still trips secret_exfil). The request body
+/// is intentionally not extracted — most scans are GETs, and not buffering it
+/// avoids a memory-exhaustion vector on this unthrottled route.
+async fn probe_handler(
+    method: http::Method,
+    uri: http::Uri,
+    ConnectInfo(remote): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Response {
+    let (user_agent, client_meta) = header_meta(&headers);
+    let ctx = RequestContext {
+        session_id: generate_session_id(),
+        transport: "http",
+        remote_addr: Some(remote_addr_from(&headers, remote)),
+        user_agent,
+        client_meta,
+        persona: None,
+    };
+    let path = uri.path().to_string();
+    let query = uri.query().map(String::from);
+    state
+        .handler
+        .log_probe(ctx, method.as_str(), &path, query)
+        .await;
+    (StatusCode::NOT_FOUND, "not found").into_response()
 }
 
 #[async_trait]
@@ -280,6 +345,9 @@ impl Transport for HttpTransport {
             .route("/version", get(version_handler))
             .route("/", get(banner_handler))
             .route("/healthz", get(|| async { "ok" }))
+            // Everything else is a non-MCP probe: log it (and run detectors)
+            // before returning 404.
+            .fallback(probe_handler)
             .layer(cors)
             .with_state(state);
 
@@ -787,6 +855,48 @@ mod tests {
             "text/html,application/xhtml+xml;q=0.9".parse().unwrap(),
         );
         assert!(client_accepts_html(&h));
+    }
+
+    #[test]
+    fn header_meta_captures_curated_headers_and_keeps_legacy_keys() {
+        let mut h = HeaderMap::new();
+        h.insert("user-agent", "scanner/1.0".parse().unwrap());
+        h.insert("accept", "application/json".parse().unwrap());
+        h.insert("authorization", "Bearer attacker-token".parse().unwrap());
+        h.insert("cf-ipcountry", "CN".parse().unwrap());
+        h.insert("origin", "https://evil.test".parse().unwrap());
+        h.insert("x-forwarded-for", "203.0.113.7, 10.0.0.1".parse().unwrap());
+
+        let (ua, meta) = header_meta(&h);
+        assert_eq!(ua.as_deref(), Some("scanner/1.0"));
+        let m = meta.unwrap();
+        // Legacy keys preserved (resolve_client_ip + dashboard depend on them).
+        assert_eq!(m["accept"], "application/json");
+        assert_eq!(m["x_forwarded_for"], "203.0.113.7, 10.0.0.1");
+        // Curated headers captured, hyphens normalised to underscores.
+        assert_eq!(m["authorization"], "Bearer attacker-token");
+        assert_eq!(m["cf_ipcountry"], "CN");
+        assert_eq!(m["origin"], "https://evil.test");
+    }
+
+    #[test]
+    fn header_meta_truncates_oversized_header_values() {
+        let mut h = HeaderMap::new();
+        h.insert("authorization", "A".repeat(2000).parse().unwrap());
+        let (_ua, meta) = header_meta(&h);
+        let m = meta.unwrap();
+        assert_eq!(
+            m["authorization"].as_str().unwrap().chars().count(),
+            MAX_HEADER_VALUE_LEN
+        );
+    }
+
+    #[test]
+    fn header_meta_empty_when_no_known_headers() {
+        let h = HeaderMap::new();
+        let (ua, meta) = header_meta(&h);
+        assert!(ua.is_none());
+        assert!(meta.is_none());
     }
 
     struct CapturingHandler {
