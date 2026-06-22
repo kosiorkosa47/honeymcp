@@ -1,0 +1,10 @@
+[Unit]
+Description=Poll for honeymcp updates every 3 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=3min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

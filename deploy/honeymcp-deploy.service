@@ -1,0 +1,11 @@
+[Unit]
+Description=honeymcp auto-deploy (pull+build+restart when main is green)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/honeymcp
+ExecStart=/home/ubuntu/honeymcp-autodeploy.sh
+TimeoutStartSec=1200
