@@ -6,6 +6,7 @@
   <div class="hm-stat">
     <div class="hm-stat-label">external events</div>
     <div class="hm-stat-value">{{ stats.total_events }}</div>
+    <div class="hm-stat-meta">MCP {{ stats.mcp_events }} &middot; probe {{ stats.probe_events }}</div>
     <div class="hm-stat-meta">
       {% if stats.operator_traffic_included %}
         <span class="hm-badge hm-badge--operator">includes operator traffic</span>
@@ -21,8 +22,8 @@
   </div>
   <div class="hm-stat">
     <div class="hm-stat-label">detector hits</div>
-    <div class="hm-stat-value">{{ stats.total_detections }}</div>
-    <div class="hm-stat-meta">across all sessions</div>
+    <div class="hm-stat-value">{{ stats.mcp_detections }}</div>
+    <div class="hm-stat-meta">MCP surface &middot; probe {{ stats.probe_detections }}</div>
   </div>
   <div class="hm-stat">
     <div class="hm-stat-label">persona</div>

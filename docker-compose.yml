@@ -56,7 +56,11 @@ services:
     tmpfs:
       - /tmp:size=32m,mode=1777
     ports:
-      - "8080:8080"
+      # Bind to loopback only: the honeypot is reached through Caddy
+      # (reverse_proxy 127.0.0.1:8080), never directly from the internet. This
+      # keeps a single logged entry point and stops a scanner from hitting the
+      # backend on :8080, bypassing the proxy.
+      - "127.0.0.1:8080:8080"
     volumes:
       - ./data:/var/lib/honeymcp
       - ./personas:/opt/honeymcp/personas:ro
