@@ -4,6 +4,11 @@
 
 ### Added
 
+- **Dashboard splits counts by attack surface.** Events and detector hits are
+  now reported as MCP surface vs probe surface, so commodity web scanning that
+  lands on the non-MCP probe paths (`/.env`, `/.git`, ...) no longer inflates
+  the numbers that should describe MCP-targeted threat. The "detector hits"
+  headline reflects the MCP surface.
 - **Multi-persona routing.** One process now serves several personas, selected
   by URL path (`/<persona>/mcp`), over a single database and dashboard. The
   bare `/mcp` serves the default; an unknown key falls back to the default
@@ -34,6 +39,12 @@
 
 - The `events` table gained a `persona` column (added in place, backwards
   compatible) so the dashboard and exports can attribute and filter by persona.
+
+### Security
+
+- The honeypot container binds to `127.0.0.1:8080`; all external traffic
+  reaches it through Caddy, so the backend is no longer directly addressable on
+  the internet on port 8080.
 
 ### CI / infrastructure
 

@@ -82,6 +82,10 @@ pub struct DashboardQuery {
 struct StatsForTemplate {
     total_events: i64,
     total_detections: i64,
+    mcp_events: i64,
+    probe_events: i64,
+    mcp_detections: i64,
+    probe_detections: i64,
     unique_remote_addrs_24h: i64,
     operator_traffic_included: bool,
     server: ServerForTemplate,
@@ -178,6 +182,10 @@ pub async fn index_handler(
     let stats_for_template = StatsForTemplate {
         total_events: stats_snap.total_events,
         total_detections: stats_snap.total_detections,
+        mcp_events: stats_snap.mcp_events,
+        probe_events: stats_snap.probe_events,
+        mcp_detections: stats_snap.mcp_detections,
+        probe_detections: stats_snap.probe_detections,
         unique_remote_addrs_24h: stats_snap.unique_remote_addrs_24h,
         operator_traffic_included: stats_snap.operator_traffic_included,
         server: ServerForTemplate {

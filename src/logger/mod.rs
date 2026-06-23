@@ -384,6 +384,58 @@ impl Logger {
         Ok(n)
     }
 
+    /// Event counts split by attack surface: `(mcp, probe)`. The probe surface
+    /// is everything logged from a non-MCP path (`method = 'probe'`, the
+    /// `/.env` / `/.git` / `/admin` scan traffic); the MCP surface is the real
+    /// protocol interactions. Keeping them apart stops commodity web scanning
+    /// from inflating the numbers that should describe MCP-targeted threat.
+    pub async fn count_events_by_surface(&self, include_operator: bool) -> Result<(i64, i64)> {
+        let db = self.inner.db.lock().await;
+        let op = if include_operator {
+            ""
+        } else {
+            " AND is_operator = 0"
+        };
+        let mcp: i64 = db.query_row(
+            &format!("SELECT COUNT(*) FROM events WHERE method != 'probe'{op}"),
+            [],
+            |r| r.get(0),
+        )?;
+        let probe: i64 = db.query_row(
+            &format!("SELECT COUNT(*) FROM events WHERE method = 'probe'{op}"),
+            [],
+            |r| r.get(0),
+        )?;
+        Ok((mcp, probe))
+    }
+
+    /// Detection counts split by the parent event's surface: `(mcp, probe)`.
+    pub async fn count_detections_by_surface(&self, include_operator: bool) -> Result<(i64, i64)> {
+        let db = self.inner.db.lock().await;
+        let op = if include_operator {
+            ""
+        } else {
+            " AND e.is_operator = 0"
+        };
+        let mcp: i64 = db.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM detections d JOIN events e ON e.id = d.event_id
+                 WHERE e.method != 'probe'{op}"
+            ),
+            [],
+            |r| r.get(0),
+        )?;
+        let probe: i64 = db.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM detections d JOIN events e ON e.id = d.event_id
+                 WHERE e.method = 'probe'{op}"
+            ),
+            [],
+            |r| r.get(0),
+        )?;
+        Ok((mcp, probe))
+    }
+
     /// Top N tool names called via `tools/call`, derived by extracting
     /// `params.name` from the stored JSON.
     pub async fn top_tools(

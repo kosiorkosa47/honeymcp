@@ -27,6 +27,14 @@ pub struct StatsSnapshot {
     pub server: ServerIdentity,
     pub total_events: i64,
     pub total_detections: i64,
+    /// Event and detection counts split by attack surface. The MCP surface is
+    /// real protocol traffic; the probe surface is non-MCP scan paths
+    /// (`/.env`, `/.git`, ...). Splitting them keeps commodity web scanning
+    /// from inflating the MCP-threat numbers.
+    pub mcp_events: i64,
+    pub probe_events: i64,
+    pub mcp_detections: i64,
+    pub probe_detections: i64,
     pub events_by_method: Vec<(String, i64)>,
     pub detections_by_category: Vec<(String, i64)>,
     pub unique_remote_addrs_24h: i64,
@@ -73,6 +81,15 @@ impl StatsProvider for LoggerStatsProvider {
         let now_ms = crate::logger::now_ms();
         let day_ago_ms = now_ms - 24 * 60 * 60 * 1000;
 
+        let (mcp_events, probe_events) = self
+            .logger
+            .count_events_by_surface(include_operator)
+            .await?;
+        let (mcp_detections, probe_detections) = self
+            .logger
+            .count_detections_by_surface(include_operator)
+            .await?;
+
         Ok(StatsSnapshot {
             uptime_seconds: self.started.elapsed().as_secs(),
             server: ServerIdentity {
@@ -82,6 +99,10 @@ impl StatsProvider for LoggerStatsProvider {
             },
             total_events: self.logger.count_events(include_operator).await?,
             total_detections: self.logger.count_detections(include_operator).await?,
+            mcp_events,
+            probe_events,
+            mcp_detections,
+            probe_detections,
             events_by_method: self.logger.events_by_method(include_operator).await?,
             detections_by_category: self.logger.detections_by_category(include_operator).await?,
             unique_remote_addrs_24h: self
