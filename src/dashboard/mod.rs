@@ -9,15 +9,23 @@
 //! delivers components 1 (Attack Story Timeline) and 2 (MCP Sequence
 //! Diagram) plus the foundation that the other six components plug into.
 
+mod analytics;
+
 use std::collections::BTreeMap;
+use std::convert::Infallible;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    response::{Html, IntoResponse, Response},
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        Html, IntoResponse, Response,
+    },
 };
+use futures::stream::Stream;
 use minijinja::{context, Environment};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -30,6 +38,8 @@ const HTMX_JS: &str = include_str!("static/htmx.min.js");
 const ALPINE_JS: &str = include_str!("static/alpine.min.js");
 const TPL_BASE: &str = include_str!("templates/base.html");
 const TPL_INDEX: &str = include_str!("templates/index.html");
+const ANALYTICS_WINDOW_MS: i64 = 24 * 60 * 60 * 1000;
+const ANALYTICS_LIMIT: i64 = 5_000;
 
 /// Compiled template environment. Cheap to clone — `Environment` keeps
 /// templates in an `Arc` internally — so we build it once at boot and hand
@@ -54,6 +64,8 @@ impl DashboardEnv {
             css => CSS_RAW,
             stats => &ctx.stats_for_template,
             sessions => &ctx.sessions,
+            analytics => &ctx.analytics,
+            view => &ctx.view,
         })?)
     }
 }
@@ -74,7 +86,6 @@ pub struct DashboardQuery {
     #[serde(default)]
     pub include_operator: bool,
     #[serde(default)]
-    #[allow(dead_code)] // reserved for future view= switch (timeline vs feed)
     pub view: Option<String>,
 }
 
@@ -140,6 +151,8 @@ struct DetectionForTemplate {
 struct IndexContext {
     stats_for_template: StatsForTemplate,
     sessions: Vec<SessionForTemplate>,
+    analytics: analytics::DashboardAnalytics,
+    view: String,
 }
 
 /// Top-level dashboard handler. Renders the timeline view; SSE live feed
@@ -178,6 +191,16 @@ pub async fn index_handler(
     };
 
     let sessions = group_into_sessions(raw_rows);
+    let analytics = match load_analytics(&state, q.include_operator).await {
+        Ok((_, analytics)) => analytics,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("analytics query: {e}"),
+            )
+                .into_response();
+        }
+    };
 
     let stats_for_template = StatsForTemplate {
         total_events: stats_snap.total_events,
@@ -198,6 +221,8 @@ pub async fn index_handler(
     let ctx = IndexContext {
         stats_for_template,
         sessions,
+        analytics,
+        view: q.view.unwrap_or_else(|| "timeline".into()),
     };
 
     match state.env.render_index(&ctx) {
@@ -208,6 +233,95 @@ pub async fn index_handler(
         )
             .into_response(),
     }
+}
+
+/// Server-Sent Events stream for the dashboard live feed. The stream polls the
+/// bounded SQLite projection and emits only rows with ids newer than the last
+/// event sent on this connection.
+pub async fn feed_handler(
+    Query(q): Query<DashboardQuery>,
+    State(state): State<DashboardState>,
+) -> Sse<impl Stream<Item = std::result::Result<Event, Infallible>>> {
+    let logger = state.logger.clone();
+    let include_operator = q.include_operator;
+
+    let stream = async_stream::stream! {
+        let mut last_id = 0i64;
+        loop {
+            let now = now_ms();
+            let since = now - ANALYTICS_WINDOW_MS;
+            match logger
+                .events_with_detections_since(since, 100, include_operator)
+                .await
+            {
+                Ok(rows) => {
+                    let mut rows: Vec<_> = rows
+                        .into_iter()
+                        .filter(|row| row.id > last_id)
+                        .collect();
+                    rows.sort_by_key(|row| row.id);
+                    for row in rows {
+                        last_id = last_id.max(row.id);
+                        let feed_event = analytics::feed_event(&row, now_ms());
+                        if let Ok(data) = serde_json::to_string(&feed_event) {
+                            yield Ok(Event::default()
+                                .event("event")
+                                .id(row.id.to_string())
+                                .data(data));
+                        }
+                    }
+                }
+                Err(e) => {
+                    yield Ok(Event::default()
+                        .event("error")
+                        .data(format!("feed query: {e}")));
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    };
+
+    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+}
+
+/// Markdown summary used for copying a daily incident/corpus report without
+/// re-running ad hoc SQLite queries on the host.
+pub async fn report_handler(
+    Query(q): Query<DashboardQuery>,
+    State(state): State<DashboardState>,
+) -> Response {
+    let (_, analytics) = match load_analytics(&state, q.include_operator).await {
+        Ok(v) => v,
+        Err(e) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("report: {e}")).into_response();
+        }
+    };
+    (
+        StatusCode::OK,
+        [("content-type", "text/markdown; charset=utf-8")],
+        analytics::render_markdown_report(&analytics, q.include_operator),
+    )
+        .into_response()
+}
+
+/// Persona-vs-observed-intent Sankey-style SVG. Kept dependency-free and
+/// server-rendered like the sequence diagram.
+pub async fn sankey_handler(
+    Query(q): Query<DashboardQuery>,
+    State(state): State<DashboardState>,
+) -> Response {
+    let (rows, _) = match load_analytics(&state, q.include_operator).await {
+        Ok(v) => v,
+        Err(e) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("sankey: {e}")).into_response();
+        }
+    };
+    (
+        StatusCode::OK,
+        [("content-type", "image/svg+xml; charset=utf-8")],
+        analytics::render_persona_sankey_svg(&rows, now_ms()),
+    )
+        .into_response()
 }
 
 /// Per-session SVG sequence diagram. Rendered server-side as raw SVG so
@@ -316,7 +430,7 @@ fn build_session_for_template(session_id: String, events: Vec<RawEventRow>) -> S
     let is_operator = events.iter().any(|e| e.is_operator);
     let user_agent = last.user_agent.clone().unwrap_or_else(|| "-".to_string());
 
-    let client_ip = resolve_client_ip(last);
+    let client_ip = analytics::source_ip(last);
 
     let last_seen_iso = format_iso(last_ts);
     let last_seen_human = format_relative(last_ts, now_ms());
@@ -434,31 +548,21 @@ fn truncate(s: &str, n: usize) -> String {
     }
 }
 
-fn resolve_client_ip(e: &RawEventRow) -> String {
-    // Prefer the XFF leftmost entry from client_meta (set by the http
-    // transport when behind a reverse proxy); fall back to remote_addr
-    // stripped of port.
-    if let Some(meta) = e.client_meta.as_deref() {
-        if let Ok(v) = serde_json::from_str::<Value>(meta) {
-            if let Some(xff) = v.get("x_forwarded_for").and_then(|x| x.as_str()) {
-                if let Some(first) = xff.split(',').map(str::trim).find(|s| !s.is_empty()) {
-                    return first.to_string();
-                }
-            }
-        }
-    }
-    match e.remote_addr.as_deref() {
-        Some(a) => a
-            .rsplit_once(':')
-            .map(|(host, _)| host.trim_start_matches('[').trim_end_matches(']'))
-            .unwrap_or(a)
-            .to_string(),
-        None => "-".into(),
-    }
-}
-
 fn now_ms() -> i64 {
     crate::logger::now_ms()
+}
+
+async fn load_analytics(
+    state: &DashboardState,
+    include_operator: bool,
+) -> Result<(Vec<RawEventRow>, analytics::DashboardAnalytics)> {
+    let now = now_ms();
+    let rows = state
+        .logger
+        .events_with_detections_since(now - ANALYTICS_WINDOW_MS, ANALYTICS_LIMIT, include_operator)
+        .await?;
+    let analytics = analytics::build_dashboard_analytics(&rows, now);
+    Ok((rows, analytics))
 }
 
 fn format_iso(ms: i64) -> String {
@@ -736,6 +840,46 @@ mod tests {
     }
 
     #[test]
+    fn render_index_template_includes_intel_sections() {
+        let stats = StatsForTemplate {
+            total_events: 0,
+            total_detections: 0,
+            mcp_events: 0,
+            probe_events: 0,
+            mcp_detections: 0,
+            probe_detections: 0,
+            unique_remote_addrs_24h: 0,
+            operator_traffic_included: false,
+            server: ServerForTemplate {
+                name: "test".into(),
+                version: "1".into(),
+                protocol_version: "2025-06-18".into(),
+            },
+        };
+        let mut row = raw(
+            1,
+            now_ms(),
+            "s",
+            "probe",
+            Some(r#"{"http_method":"GET","path":"/.env","query":null}"#),
+        );
+        row.detections_json = Some(
+            r#"[{"detector":"secret_exfil_targets","severity":"critical","category":"secret_exfil","evidence":".env"}]"#
+                .into(),
+        );
+        let ctx = IndexContext {
+            stats_for_template: stats,
+            sessions: Vec::new(),
+            analytics: analytics::build_dashboard_analytics(&[row], now_ms()),
+            view: "timeline".into(),
+        };
+        let html = DashboardEnv::new().unwrap().render_index(&ctx).unwrap();
+        assert!(html.contains("attack intelligence"));
+        assert!(html.contains("source countries"));
+        assert!(html.contains("live feed"));
+    }
+
+    #[test]
     fn group_into_sessions_orders_by_first_appearance() {
         let rows = vec![
             raw(1, 1_000, "sess-a", "initialize", None),
@@ -799,7 +943,7 @@ mod tests {
         let mut row = raw(1, 0, "s", "initialize", None);
         row.client_meta = Some(r#"{"x_forwarded_for":"203.0.113.7, 10.0.0.1"}"#.into());
         row.remote_addr = Some("127.0.0.1:1234".into());
-        assert_eq!(resolve_client_ip(&row), "203.0.113.7");
+        assert_eq!(analytics::source_ip(&row), "203.0.113.7");
     }
 
     #[test]
@@ -807,7 +951,7 @@ mod tests {
         let mut row = raw(1, 0, "s", "initialize", None);
         row.client_meta = None;
         row.remote_addr = Some("198.51.100.42:51000".into());
-        assert_eq!(resolve_client_ip(&row), "198.51.100.42");
+        assert_eq!(analytics::source_ip(&row), "198.51.100.42");
     }
 
     #[test]
@@ -815,6 +959,6 @@ mod tests {
         let mut row = raw(1, 0, "s", "initialize", None);
         row.client_meta = None;
         row.remote_addr = Some("[2001:db8::1]:443".into());
-        assert_eq!(resolve_client_ip(&row), "2001:db8::1");
+        assert_eq!(analytics::source_ip(&row), "2001:db8::1");
     }
 }

@@ -21,19 +21,24 @@ expected to find guidance under.
 ## Service overview
 
 `honeymcp` is a single Rust binary that pretends to be an MCP server,
-records every request to SQLite (and optionally JSONL), runs seven
+records every request to SQLite (and optionally JSONL), runs eleven
 threat detectors against the params, and exposes a server-rendered
 analyst dashboard at `/dashboard`.
 
-The deployed surface is intentionally minimal:
+The application surface is intentionally minimal. In the production Caddy
+deployment, `/dashboard`, `/dashboard/*`, `/stats`, `/healthz`, and
+`/version` are operator-only behind Basic Auth; public traffic reaches only
+the banner and MCP honeypot paths. The container port is bound to loopback.
 
 | Path | Purpose |
 | --- | --- |
 | `GET /` | Operator banner — research-honeypot disclosure + GDPR contact |
-| `GET /healthz` | Liveness + readiness probe |
-| `GET /version` | Build provenance (crate version + git sha + build time) |
-| `GET /stats` | JSON event counters; defaults to `is_operator=0` |
-| `GET /dashboard` | Server-rendered Attack Story Timeline |
+| `GET /healthz` | Operator liveness + readiness probe |
+| `GET /version` | Operator build provenance (crate version + git sha + build time) |
+| `GET /stats` | Operator JSON event counters; defaults to `is_operator=0` |
+| `GET /dashboard` | Operator dashboard: attack intel, campaigns, geo, heatmap, feed, timeline |
+| `GET /dashboard/feed` | Operator SSE stream of new events |
+| `GET /dashboard/report.md` | Operator markdown attack report |
 | `POST /mcp` | Streamable HTTP MCP transport (spec 2025-06-18) |
 | `GET /mcp`, `DELETE /mcp` | SSE stream + session teardown |
 | `POST /message`, `GET /sse` | Legacy HTTP+SSE transport |
@@ -60,7 +65,7 @@ quarantine the pulled image.
 ```bash
 docker run -d --name honeymcp \
     --restart unless-stopped \
-    -p 8080:8080 \
+    -p 127.0.0.1:8080:8080 \
     -v /var/lib/honeymcp:/var/lib/honeymcp \
     ghcr.io/kosiorkosa47/honeymcp:latest \
     --transport http \
@@ -99,7 +104,7 @@ If any of those fail, see [Common alerts](#common-alerts-and-responses).
 | Probe | Healthy | Unhealthy |
 | --- | --- | --- |
 | `GET /healthz` | `200 OK` body `ok` | Anything else |
-| `GET /version` | JSON with non-`unknown` `git_sha` | `git_sha = "unknown"` means the build isn't traceable |
+| `GET /version` | JSON with non-`unknown` `git_sha` | `git_sha = "unknown"` means the Docker build did not receive `HONEYMCP_GIT_SHA` |
 | `du -sh /var/lib/honeymcp/hive.db` | < 5 GB on a small VPS | Investigate trim path; the logger drops the oldest 10% at 1M events but a stuck trim is possible |
 | `journalctl -u honeymcp` (or `docker logs`) | No `ERROR` lines for ~5 min | Persistent `ERROR` lines = read [Triage queries](#triage-queries) |
 
@@ -170,7 +175,9 @@ Tail logs for the failing template; almost always one of:
 
 The deployed binary wasn't built with `HONEYMCP_GIT_SHA` set. This
 means the image isn't traceable to a commit and is **not safe to
-deploy** to a public IP. Rebuild from a tagged release.
+deploy** to a public IP. Rebuild through the versioned deploy path;
+`deploy/auto-deploy.sh` passes the checked `origin/main` sha into
+`docker compose build`.
 
 ## Triage queries
 

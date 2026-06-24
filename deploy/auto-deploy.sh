@@ -63,7 +63,8 @@ echo "$(date -Is) verdict: $verdict"
 echo "$(date -Is) deploying ${REMOTE:0:7}"
 git reset --hard "origin/$BRANCH" >/dev/null 2>&1
 apply_host_hardening "$REMOTE" || exit 1
-if docker compose build honeymcp >/tmp/honeymcp-deploy-build.log 2>&1 \
+if HONEYMCP_GIT_SHA="$REMOTE" HONEYMCP_BUILD_UNIX_TS="$(date +%s)" \
+   docker compose build honeymcp >/tmp/honeymcp-deploy-build.log 2>&1 \
    && docker compose up -d --force-recreate honeymcp >/dev/null 2>&1; then
   sleep 6
   if curl -fsS --max-time 5 http://127.0.0.1:8080/healthz >/dev/null 2>&1; then

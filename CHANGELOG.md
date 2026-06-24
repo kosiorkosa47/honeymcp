@@ -4,6 +4,15 @@
 
 ### Added
 
+- **Dashboard attack-intelligence overview.** `/dashboard` now derives a
+  last-24h analyst view from SQLite: attack classes, attacker goal summaries,
+  top campaigns grouped by source/user-agent/class, MCP risk score, source
+  country pulse map, detector co-occurrence heatmap, live SSE feed, and a
+  one-click markdown report at `/dashboard/report.md`.
+- **Persona-vs-observed-intent SVG.** `/dashboard/sankey.svg` renders a
+  dependency-free server-side flow from persona surface to observed attack
+  class, so operators can see whether traffic is actually exercising MCP tools
+  or just probing generic web paths.
 - **Dashboard splits counts by attack surface.** Events and detector hits are
   now reported as MCP surface vs probe surface, so commodity web scanning that
   lands on the non-MCP probe paths (`/.env`, `/.git`, ...) no longer inflates
@@ -22,8 +31,8 @@
   arguments). New `--canaries` flag plus `./canaries.yaml` auto-discovery.
 - **Wider request telemetry.** A curated allowlist of high-signal headers
   (`authorization`, `x-api-key`, `origin`, `referer`, `cf-connecting-ip`,
-  `cf-ipcountry`, `x-real-ip`, `true-client-ip`, `via`, `sec-*`) is captured
-  into `client_meta`, each value truncated.
+  `cf-ipcountry`, `geoip-country`, `x-real-ip`, `true-client-ip`, `via`,
+  `sec-*`) is captured into `client_meta`, each value truncated.
 - **Non-MCP probe logging.** Requests to unmodelled paths (`/.env`,
   `/.git/config`, `/admin`, and the like) are logged as `probe` events and run
   through the detector registry, so a credential-file scan trips `secret_exfil`
@@ -54,6 +63,10 @@
 - **Box auto-deploy.** A systemd timer pulls, rebuilds and restarts the live
   honeypot whenever `main` advances and every CI check-run on that commit is
   green. Scripts versioned under [`deploy/`](deploy/).
+- **Docker build provenance from deploy SHA.** `docker compose build` now
+  passes the checked CI-green `origin/main` commit into `build.rs`, so
+  `/version` reports a traceable git sha even when the Docker build context
+  does not include `.git`.
 
 ### Fixed
 

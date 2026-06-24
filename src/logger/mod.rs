@@ -538,6 +538,67 @@ impl Logger {
             .collect();
         Ok(rows)
     }
+
+    /// Bounded event window with detections inlined. This is the analytics
+    /// feed for dashboard panels that need "last 24h" style views rather than
+    /// the session-card window used by [`Logger::recent_events_with_detections`].
+    pub async fn events_with_detections_since(
+        &self,
+        since_ms: i64,
+        limit: i64,
+        include_operator: bool,
+    ) -> Result<Vec<RawEventRow>> {
+        let db = self.inner.db.lock().await;
+        let op_filter = if include_operator {
+            ""
+        } else {
+            "AND e.is_operator = 0"
+        };
+        let sql = format!(
+            "SELECT
+               e.id, e.timestamp_ms, e.session_id, e.method, e.params,
+               e.client_name, e.client_version, e.response_summary,
+               e.transport, e.remote_addr, e.user_agent, e.client_meta,
+               e.persona, e.is_operator,
+               (SELECT json_group_array(json_object(
+                  'detector', d.detector,
+                  'severity', d.severity,
+                  'category', d.category,
+                  'evidence', d.evidence,
+                  'mitre_techniques', d.mitre_techniques
+               ))
+                FROM detections d WHERE d.event_id = e.id) AS detections_json
+             FROM events e
+             WHERE e.timestamp_ms >= ?1 {op_filter}
+             ORDER BY e.timestamp_ms DESC
+             LIMIT ?2"
+        );
+
+        let mut stmt = db.prepare(&sql)?;
+        let rows = stmt
+            .query_map(params![since_ms, limit], |r| {
+                Ok(RawEventRow {
+                    id: r.get(0)?,
+                    timestamp_ms: r.get(1)?,
+                    session_id: r.get(2)?,
+                    method: r.get(3)?,
+                    params: r.get(4)?,
+                    client_name: r.get(5)?,
+                    client_version: r.get(6)?,
+                    response_summary: r.get(7)?,
+                    transport: r.get(8)?,
+                    remote_addr: r.get(9)?,
+                    user_agent: r.get(10)?,
+                    client_meta: r.get(11)?,
+                    persona: r.get(12)?,
+                    is_operator: r.get::<_, i64>(13)? != 0,
+                    detections_json: r.get(14)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
 }
 
 /// Wide row returned by [`Logger::recent_events_with_detections`]. Stays

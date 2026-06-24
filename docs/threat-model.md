@@ -7,8 +7,8 @@ contributors, not as a legal document.
 
 - **Framework:** STRIDE (Spoofing, Tampering, Repudiation, Information
   disclosure, Denial of service, Elevation of privilege).
-- **Last reviewed:** 2026-04-24 for honeymcp v0.5.0 + `main` (Streamable HTTP
-  transport).
+- **Last reviewed:** 2026-06-24 for honeymcp v0.7.0 + `main` (multi-persona
+  Streamable HTTP transport, probe logging, dashboard auth deployment).
 
 ## 0. System context
 
@@ -23,14 +23,17 @@ A honeymcp deployment is one process that speaks the Model Context Protocol
 The process loads a **persona** (tool catalogue + canned responses) from a
 YAML file and serves plausible MCP responses back. Each request and response
 is passed through a set of **detectors** (prompt injection, shell injection,
-recon, etc.) and persisted to SQLite and optionally a JSONL mirror.
+recon, cloud metadata probes, scanner fingerprints, etc.) and persisted to
+SQLite and optionally a JSONL mirror.
 
-There are **three trust zones**:
+There are **four trust zones**:
 
 1. **Attacker** - unauthenticated internet client, potentially scripted.
-2. **Operator** - the human running the honeypot. Has the persona files,
+2. **Reverse proxy / host boundary** - Caddy, firewall and Docker port binding
+   that keep operator endpoints private and the backend on loopback.
+3. **Operator** - the human running the honeypot. Has the persona files,
    the database, and the host.
-3. **Consumer of threat intel** - later readers of the captured corpus.
+4. **Consumer of threat intel** - later readers of the captured corpus.
 
 honeymcp is designed so that attackers stay in zone 1 even when they
 successfully exercise the attack payloads we want to capture.
@@ -83,10 +86,10 @@ and leaking the log back to the attacker is one of the worst failure modes.
 |---|---|---|
 | Attacker drops a live credential into a tool call; honeymcp echoes it back in the JSON-RPC result | Response payloads are static from persona YAML; no echoing of request content | Detectors may surface matched content to the dashboard - **do not expose the dashboard to the public internet** |
 | Attacker triggers verbose error that leaks server stack / versions | axum default error handling kept, no debug bodies in production; `RUSTFLAGS: -D warnings` catches unintended debug prints | Error bodies for malformed JSON still include parser message; acceptable because it's JSON-RPC `-32700` boilerplate, but a hardened build could suppress |
-| Detection of honeymcp via banner / dashboard fingerprint | **Accepted leak.** A honeypot that hides its dashboard is a honeypot that silently mis-attributes real production traffic. We serve a documented research banner (`docs/legal/operator-banner.md`) at `GET /` | N/A |
+| Detection of honeymcp via banner fingerprint | **Accepted leak.** We serve a documented research banner (`docs/legal/operator-banner.md`) at `GET /` so traffic is not misrepresented as a production service | N/A |
 | Secrets in captured payloads leak to logs / stdout | `redact_secrets` replaces known tokens (GitHub PAT, AWS access keys, PEM keys, JWTs, Slack tokens) before writing response text | Request params stored raw for forensics; redaction only applies to responses and to probe outputs |
 | Attacker reads the DB via SQL injection in some helper endpoint | No query parameters are interpolated into SQL; we use prepared statements everywhere | N/A; keep this invariant if adding endpoints |
-| `/stats` / `/dashboard` expose attacker IPs to the world | Dashboard is unauthenticated by design (low-value live view, aggregates only). Deployments that want to keep this private should put it behind a VPN or reverse-proxy auth | No built-in basic-auth toggle |
+| `/stats` / `/dashboard` expose attacker IPs to the world | The production deployment protects `/dashboard`, `/dashboard/*`, `/stats`, `/healthz`, and `/version` with Caddy Basic Auth and keeps the container backend bound to `127.0.0.1:8080` | The binary itself still does not implement auth; direct-exposed deployments must use a trusted reverse proxy |
 
 ### 2.5 Denial of service
 
@@ -156,6 +159,7 @@ Re-run the STRIDE pass when any of the following changes:
 - A new detector category is introduced that might regex-match on response
   bodies rather than just request params.
 - The storage backend changes (SQLite -> Postgres migration is planned).
-- Any auth / session-state mechanism lands (currently stateless-per-session).
+- Any new auth / session-state mechanism lands in the binary rather than the
+  reverse proxy.
 - A new category of user-supplied input appears (e.g. operator-uploaded
   personas via web UI instead of file).
