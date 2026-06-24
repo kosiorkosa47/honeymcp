@@ -33,12 +33,56 @@ apply_host_hardening() {
   fi
 }
 
+live_git_sha() {
+  curl -fsS --max-time 5 http://127.0.0.1:8080/version 2>/dev/null \
+    | python3 -c 'import sys, json
+try:
+    print(json.load(sys.stdin).get("git_sha") or "unknown")
+except Exception:
+    print("unknown")
+'
+}
+
+build_and_recreate() {
+  sha="$1"
+  if HONEYMCP_GIT_SHA="$sha" HONEYMCP_BUILD_UNIX_TS="$(date +%s)" \
+     docker compose build honeymcp >/tmp/honeymcp-deploy-build.log 2>&1 \
+     && docker compose up -d --force-recreate honeymcp >/dev/null 2>&1; then
+    sleep 6
+    if curl -fsS --max-time 5 http://127.0.0.1:8080/healthz >/dev/null 2>&1; then
+      echo "$(date -Is) DEPLOYED ${sha:0:7} OK (healthz green)"
+    else
+      echo "$(date -Is) WARNING ${sha:0:7} deployed but healthz failed"
+    fi
+  else
+    echo "$(date -Is) ERROR build/up failed for ${sha:0:7} (see /tmp/honeymcp-deploy-build.log)"
+    return 1
+  fi
+}
+
+needs_rebuild_for_sha() {
+  sha="$1"
+  live="$(live_git_sha)"
+  case "$live" in
+    "$sha"|"${sha:0:12}") return 1 ;;
+    *)
+      echo "$(date -Is) live git_sha '$live' != ${sha:0:12}; rebuilding"
+      return 0
+      ;;
+  esac
+}
+
 git fetch --quiet origin "$BRANCH" || { echo "$(date -Is) git fetch failed"; exit 0; }
 LOCAL=$(git rev-parse HEAD)
 REMOTE=$(git rev-parse "origin/$BRANCH")
 if [ "$LOCAL" = "$REMOTE" ]; then
   APPLIED=$(cat "$HARDENING_STAMP" 2>/dev/null || true)
-  [ "$APPLIED" = "$LOCAL" ] || apply_host_hardening "$LOCAL"
+  if [ "$APPLIED" != "$LOCAL" ]; then
+    apply_host_hardening "$LOCAL" || exit 1
+  fi
+  if needs_rebuild_for_sha "$LOCAL"; then
+    build_and_recreate "$LOCAL" || exit 1
+  fi
   exit 0
 fi
 
@@ -63,15 +107,4 @@ echo "$(date -Is) verdict: $verdict"
 echo "$(date -Is) deploying ${REMOTE:0:7}"
 git reset --hard "origin/$BRANCH" >/dev/null 2>&1
 apply_host_hardening "$REMOTE" || exit 1
-if HONEYMCP_GIT_SHA="$REMOTE" HONEYMCP_BUILD_UNIX_TS="$(date +%s)" \
-   docker compose build honeymcp >/tmp/honeymcp-deploy-build.log 2>&1 \
-   && docker compose up -d --force-recreate honeymcp >/dev/null 2>&1; then
-  sleep 6
-  if curl -fsS --max-time 5 http://127.0.0.1:8080/healthz >/dev/null 2>&1; then
-    echo "$(date -Is) DEPLOYED ${REMOTE:0:7} OK (healthz green)"
-  else
-    echo "$(date -Is) WARNING ${REMOTE:0:7} deployed but healthz failed"
-  fi
-else
-  echo "$(date -Is) ERROR build/up failed for ${REMOTE:0:7} (see /tmp/honeymcp-deploy-build.log)"
-fi
+build_and_recreate "$REMOTE" || exit 1
