@@ -12,14 +12,35 @@ set -uo pipefail
 REPO=/home/ubuntu/honeymcp
 SLUG=kosiorkosa47/honeymcp
 BRANCH=main
+HARDENING_STAMP=/home/ubuntu/.honeymcp-host-hardening.sha
 exec 9>/tmp/honeymcp-deploy.lock
 flock -n 9 || { echo "$(date -Is) deploy already running, skip"; exit 0; }
 
 cd "$REPO" || exit 1
+
+apply_host_hardening() {
+  sha="$1"
+  if [ ! -x ./deploy/apply-host-hardening.sh ]; then
+    echo "$(date -Is) WARNING host hardening script missing; skip"
+    return 0
+  fi
+  if ./deploy/apply-host-hardening.sh >/tmp/honeymcp-host-hardening.log 2>&1; then
+    printf '%s\n' "$sha" >"$HARDENING_STAMP"
+    echo "$(date -Is) host hardening applied for ${sha:0:7}"
+  else
+    echo "$(date -Is) ERROR host hardening failed for ${sha:0:7} (see /tmp/honeymcp-host-hardening.log)"
+    return 1
+  fi
+}
+
 git fetch --quiet origin "$BRANCH" || { echo "$(date -Is) git fetch failed"; exit 0; }
 LOCAL=$(git rev-parse HEAD)
 REMOTE=$(git rev-parse "origin/$BRANCH")
-[ "$LOCAL" = "$REMOTE" ] && exit 0
+if [ "$LOCAL" = "$REMOTE" ]; then
+  APPLIED=$(cat "$HARDENING_STAMP" 2>/dev/null || true)
+  [ "$APPLIED" = "$LOCAL" ] || apply_host_hardening "$LOCAL"
+  exit 0
+fi
 
 echo "$(date -Is) main advanced ${LOCAL:0:7} -> ${REMOTE:0:7}; checking CI"
 verdict=$(curl -fsSL -H 'Accept: application/vnd.github+json' \
@@ -41,6 +62,7 @@ echo "$(date -Is) verdict: $verdict"
 
 echo "$(date -Is) deploying ${REMOTE:0:7}"
 git reset --hard "origin/$BRANCH" >/dev/null 2>&1
+apply_host_hardening "$REMOTE" || exit 1
 if docker compose build honeymcp >/tmp/honeymcp-deploy-build.log 2>&1 \
    && docker compose up -d --force-recreate honeymcp >/dev/null 2>&1; then
   sleep 6

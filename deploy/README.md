@@ -26,6 +26,8 @@ swap — see "Prerequisites".
 
 - The repo cloned at `/home/ubuntu/honeymcp`, on `main`, tracking `origin/main`.
 - Docker Engine + Compose v2, with the `ubuntu` user in the `docker` group.
+- Caddy installed on the host, terminating public HTTP/HTTPS and proxying to
+  `127.0.0.1:8080`.
 - Swap (the build needs more than the box's RAM). Example, persisted:
   ```bash
   sudo fallocate -l 6G /swapfile && sudo chmod 600 /swapfile
@@ -37,14 +39,38 @@ swap — see "Prerequisites".
 ## Install
 
 ```bash
-# 1. Canonical script -> installed copy the service runs.
-cp deploy/auto-deploy.sh /home/ubuntu/honeymcp-autodeploy.sh
+# 1. Stable wrapper -> versioned script in the checked-out repo.
+cat > /home/ubuntu/honeymcp-autodeploy.sh <<'EOF'
+#!/bin/sh
+set -eu
+cd /home/ubuntu/honeymcp
+exec ./deploy/auto-deploy.sh
+EOF
 chmod +x /home/ubuntu/honeymcp-autodeploy.sh
 
 # 2. systemd units.
 sudo cp deploy/honeymcp-deploy.service deploy/honeymcp-deploy.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now honeymcp-deploy.timer
+```
+
+Bootstrap the one local secret the repo must not carry:
+
+```bash
+sudo install -d -m 0755 /etc/honeymcp
+caddy hash-password
+# paste the hash, not the plaintext password:
+echo 'admin <hash>' | sudo tee /etc/honeymcp/dashboard-basic-auth >/dev/null
+sudo chmod 0640 /etc/honeymcp/dashboard-basic-auth
+sudo chown root:caddy /etc/honeymcp/dashboard-basic-auth
+```
+
+Install the host-side hardening units as part of a rebuild. The auto-deploy
+script also runs this on every successful `main` deploy so the live box
+converges back to the versioned host configuration.
+
+```bash
+./deploy/apply-host-hardening.sh
 ```
 
 ## Operate
@@ -64,6 +90,6 @@ sudo systemctl enable  --now honeymcp-deploy.timer
 sudo systemctl start honeymcp-deploy.service
 ```
 
-After changing `auto-deploy.sh` in the repo, re-copy it to
-`/home/ubuntu/honeymcp-autodeploy.sh` (the service runs the installed copy, not
-the in-repo file, so a mid-deploy `git reset` can't rewrite the running script).
+`/home/ubuntu/honeymcp-autodeploy.sh` is intentionally only a stable wrapper.
+The deploy logic lives in `deploy/auto-deploy.sh`, so changes to deploy
+behaviour go through GitHub and are picked up from the checked-out repo.

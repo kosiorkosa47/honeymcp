@@ -1,0 +1,22 @@
+{
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+:80 {
+	@operator path /dashboard /dashboard/* /stats /healthz /version
+	basic_auth @operator {
+		# Keep the credential hash out of git. The imported file should contain
+		# one Caddy basic_auth line, for example:
+		#   admin $2a$14$...
+		import /etc/honeymcp/dashboard-basic-auth
+	}
+
+	reverse_proxy 127.0.0.1:8080
+
+	log {
+		output file /var/log/caddy/access.log
+		format json
+	}
+}
