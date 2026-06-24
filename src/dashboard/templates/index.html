@@ -44,6 +44,215 @@
   </span>
 </section>
 
+<section class="hm-intel-grid">
+  <div class="hm-panel hm-panel--wide">
+    <div class="hm-panel-head">
+      <div>
+        <h2 class="hm-h2">attack intelligence</h2>
+        <p class="hm-h2-sub">{{ analytics.window_label }} · {{ analytics.event_count }} events · {{ analytics.detection_count }} detector hits</p>
+      </div>
+      <a class="hm-panel-link" href="/dashboard/report.md{{ '?include_operator=true' if stats.operator_traffic_included else '' }}" target="_blank">markdown report</a>
+    </div>
+    {% if analytics.attack_classes %}
+    <div class="hm-attack-classes">
+      {% for a in analytics.attack_classes %}
+      <div class="hm-attack-class hm-severity-left--{{ a.severity }}">
+        <div class="hm-attack-main">
+          <span class="hm-attack-name">{{ a.name }}</span>
+          <span class="hm-badge hm-badge--{{ 'operator' if a.surface == 'mcp' else 'external' }}">{{ a.surface }}</span>
+        </div>
+        <div class="hm-attack-goal">{{ a.goal }}</div>
+        <div class="hm-attack-meta">
+          <span>{{ a.count }} event{{ "s" if a.count != 1 else "" }}</span>
+          <span>{{ a.detections }} hit{{ "s" if a.detections != 1 else "" }}</span>
+          <span>{{ a.unique_sources }} source{{ "s" if a.unique_sources != 1 else "" }}</span>
+          <span>{{ a.latest_relative }}</span>
+        </div>
+        <div class="hm-bar"><span style="width: {{ a.share_pct }}%"></span></div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="hm-empty">no attack classes in this window.</p>
+    {% endif %}
+  </div>
+
+  <div class="hm-panel">
+    <div class="hm-panel-head">
+      <div>
+        <h2 class="hm-h2">mcp risk</h2>
+        <p class="hm-h2-sub">{{ analytics.mcp_risk.label }} · score {{ analytics.mcp_risk.score }}/100</p>
+      </div>
+    </div>
+    <div class="hm-risk-meter"><span style="width: {{ analytics.mcp_risk.score }}%"></span></div>
+    <dl class="hm-kv">
+      <div><dt>sessions</dt><dd>{{ analytics.mcp_risk.sessions }}</dd></div>
+      <div><dt>suspicious</dt><dd>{{ analytics.mcp_risk.suspicious_sessions }}</dd></div>
+      <div><dt>tool calls</dt><dd>{{ analytics.mcp_risk.tool_calls }}</dd></div>
+      <div><dt>detected calls</dt><dd>{{ analytics.mcp_risk.tool_calls_with_detections }}</dd></div>
+      <div><dt>unknown methods</dt><dd>{{ analytics.mcp_risk.unknown_methods }}</dd></div>
+    </dl>
+  </div>
+</section>
+
+<section class="hm-intel-grid">
+  <div class="hm-panel hm-panel--wide">
+    <div class="hm-panel-head">
+      <div>
+        <h2 class="hm-h2">source countries</h2>
+        <p class="hm-h2-sub">from `cf-ipcountry` or local enrichment when present; unknown stays unknown.</p>
+      </div>
+    </div>
+    <div class="hm-geo-layout">
+      <svg class="hm-geo-map" viewBox="0 0 640 260" role="img" aria-label="source country pulse map">
+        <rect x="0" y="0" width="640" height="260" rx="4"></rect>
+        <path d="M20 70 C90 35 155 45 230 72 S360 92 430 58 S545 50 620 82" />
+        <path d="M34 150 C120 120 210 138 285 165 S445 196 608 152" />
+        <path d="M98 215 C180 190 285 203 365 218 S500 242 594 208" />
+        {% for c in analytics.countries %}
+          {% if c.has_position %}
+          <g class="hm-country-pulse">
+            <circle cx="{{ c.x }}" cy="{{ c.y }}" r="{{ c.radius }}"></circle>
+            <text x="{{ c.x }}" y="{{ c.y - c.radius - 4 }}">{{ c.code }}</text>
+          </g>
+          {% endif %}
+        {% endfor %}
+      </svg>
+      <div class="hm-country-table">
+        {% for c in analytics.countries %}
+        <div class="hm-country-row">
+          <span class="hm-country-code">{{ c.code }}</span>
+          <span class="hm-country-name">{{ c.name }}</span>
+          <span class="hm-country-count">{{ c.count }}</span>
+          <span class="hm-country-class">{{ c.top_class }}</span>
+        </div>
+        {% else %}
+        <p class="hm-empty">no country signal in this window.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="hm-panel">
+    <div class="hm-panel-head">
+      <div>
+        <h2 class="hm-h2">detector co-occurrence</h2>
+        <p class="hm-h2-sub">same-session detector pairs</p>
+      </div>
+    </div>
+    {% if analytics.heatmap.rows %}
+    <div class="hm-heatmap-wrap">
+      <table class="hm-heatmap">
+        <thead>
+          <tr>
+            <th></th>
+            {% for d in analytics.heatmap.detectors %}
+            <th title="{{ d }}">{{ loop.index }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in analytics.heatmap.rows %}
+          <tr>
+            <th title="{{ row.detector }}">{{ loop.index }}</th>
+            {% for cell in row.cells %}
+            <td class="hm-heat hm-heat--{{ cell.bucket }}" title="{{ cell.count }}">{{ cell.count }}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <ol class="hm-heatmap-legend">
+        {% for d in analytics.heatmap.detectors %}
+        <li><span>{{ loop.index }}</span>{{ d }}</li>
+        {% endfor %}
+      </ol>
+    </div>
+    {% else %}
+    <p class="hm-empty">no detector pairs in this window.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="hm-intel-grid">
+  <div class="hm-panel hm-panel--wide">
+    <div class="hm-panel-head">
+      <div>
+        <h2 class="hm-h2">campaigns</h2>
+        <p class="hm-h2-sub">grouped by source, user-agent and attack class</p>
+      </div>
+    </div>
+    {% if analytics.campaigns %}
+    <div class="hm-campaigns">
+      {% for c in analytics.campaigns %}
+      <div class="hm-campaign hm-severity-left--{{ c.severity }}">
+        <div class="hm-campaign-top">
+          <span class="hm-campaign-label">{{ c.label }}</span>
+          <span>{{ c.count }} event{{ "s" if c.count != 1 else "" }}</span>
+          <span>{{ c.duration }}</span>
+        </div>
+        <div class="hm-campaign-goal">{{ c.goal }}</div>
+        <div class="hm-campaign-meta">
+          <code>{{ c.country_code }}</code>
+          <code>{{ c.sample_path }}</code>
+          <span>{{ c.user_agent }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="hm-empty">no campaign groups in this window.</p>
+    {% endif %}
+  </div>
+
+  <div class="hm-panel hm-panel--embed">
+    <div class="hm-panel-head">
+      <div>
+        <h2 class="hm-h2">persona flow</h2>
+        <p class="hm-h2-sub">persona to observed intent</p>
+      </div>
+      <a class="hm-panel-link" href="/dashboard/sankey.svg{{ '?include_operator=true' if stats.operator_traffic_included else '' }}" target="_blank">open svg</a>
+    </div>
+    <img class="hm-sankey-preview" src="/dashboard/sankey.svg{{ '?include_operator=true' if stats.operator_traffic_included else '' }}" alt="Persona to observed intent flow">
+  </div>
+</section>
+
+<section id="live-feed" class="hm-panel hm-live" x-init="connectFeed()">
+  <div class="hm-panel-head">
+    <div>
+      <h2 class="hm-h2">live feed</h2>
+      <p class="hm-h2-sub">{{ analytics.window_label }} snapshot; new rows stream over SSE.</p>
+    </div>
+    <span class="hm-feed-state" :class="ws_connected ? 'hm-feed-state--live' : 'hm-feed-state--idle'" x-text="ws_connected ? 'connected' : 'connecting'"></span>
+  </div>
+  <ol class="hm-feed-list" x-show="live_events.length > 0" x-cloak>
+    <template x-for="ev in live_events" :key="ev.id">
+      <li class="hm-feed-row">
+        <time :datetime="ev.iso" x-text="ev.relative"></time>
+        <span class="hm-feed-surface" x-text="ev.surface"></span>
+        <span class="hm-feed-class" x-text="ev.attack_class"></span>
+        <span class="hm-feed-source"><span x-text="ev.country_code"></span> · <span x-text="ev.source_ip"></span></span>
+        <span class="hm-feed-path" x-text="ev.path"></span>
+        <span class="hm-feed-detections" x-text="ev.detections.join(', ')"></span>
+      </li>
+    </template>
+  </ol>
+  <ol class="hm-feed-list" x-show="live_events.length === 0">
+    {% for ev in analytics.feed_events %}
+    <li class="hm-feed-row">
+      <time datetime="{{ ev.iso }}">{{ ev.relative }}</time>
+      <span class="hm-feed-surface">{{ ev.surface }}</span>
+      <span class="hm-feed-class">{{ ev.attack_class }}</span>
+      <span class="hm-feed-source">{{ ev.country_code }} · {{ ev.source_ip }}</span>
+      <span class="hm-feed-path">{{ ev.path }}</span>
+      <span class="hm-feed-detections">{{ ev.detections | join(", ") }}</span>
+    </li>
+    {% else %}
+    <li class="hm-feed-row hm-feed-row--empty">no events in this window.</li>
+    {% endfor %}
+  </ol>
+</section>
+
 <section class="hm-timeline">
   <h2 class="hm-h2">attack story timeline</h2>
   <p class="hm-h2-sub">

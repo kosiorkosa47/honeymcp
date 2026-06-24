@@ -92,26 +92,24 @@ detector strikes. The visual difference between the two is the point.
 This is the component nobody else has shipped. It only makes sense for an
 MCP honeypot because it encodes the protocol's session shape.
 
-### 3. Persona-vs-Reality Sankey (PR 2)
+### 3. Persona-vs-Reality Sankey (implemented)
 
-Two-column sankey. Left: tools the active persona advertises. Right: tools
-attackers actually invoked via `tools/call`. Width of each link encodes
-the call count.
+Two-column SVG. Left: persona or probe surface. Right: observed attack class.
+Width of each link encodes the event count.
 
 The visual claim of the project from the first-week blog post -- "tool
 catalogue is advisory, not load-bearing" -- becomes a single-screen proof
-the moment week-six corpus has any volume. Until that volume arrives this
-panel renders an honest empty-state explaining the threshold.
+the moment corpus has any volume. Until that volume arrives this panel renders
+an honest empty-state.
 
-### 4. Detector Co-occurrence Heatmap (PR 2)
+### 4. Detector Co-occurrence Heatmap (implemented)
 
-7x7 heatmap of detector x detector. Cell colour encodes the conditional
-probability that detector Y fires given that detector X fired in the same
-event. `recon` x `tool_enumeration` should be hot; `secret_exfil` x
-`unicode_anomaly` should be cool. Surface non-obvious correlations the
-scalar bar charts cannot reveal.
+Top-N heatmap of detector x detector. Cell colour encodes how often detector
+Y appears with detector X in the same session. `recon` x `tool_enumeration`
+should be hot; `secret_exfil` x `unicode_anomaly` should be cool. Surface
+non-obvious correlations the scalar bar charts cannot reveal.
 
-### 5. Live Feed with honest badges (PR 3)
+### 5. Live Feed with honest badges (implemented)
 
 Streaming list of the latest events. Two visual states per row: green dot
 external, grey dot operator. Default toggle is `external only`. The toggle
@@ -121,12 +119,11 @@ shareable; bookmarks survive operator changes.
 This is the most explicit place where the methodology is shown to the
 reader rather than buried in CHANGELOG.
 
-### 6. Geo-IP Pulse Map (PR 3)
+### 6. Geo-IP Pulse Map (implemented)
 
-Small-multiples world map with one dot per resolved IP, animated forward
-through the corpus window. No fake "1.4M attacks/sec" theatre. A counter
-strip below the map shows the honest external-only number with a 24h
-delta.
+Small country-level pulse map with dots when `CF-IPCountry`, `GeoIP-Country`
+or another local enrichment source is present. No fake "1.4M attacks/sec"
+theatre; unknown country stays explicitly unknown.
 
 ### 7. Build Provenance Footer (PR 4)
 
@@ -157,10 +154,11 @@ context.
 | ---                        | ---    | ---                                |
 | `/dashboard`               | GET    | Server-rendered shell + initial state |
 | `/dashboard/feed`          | GET    | SSE stream of new events           |
+| `/dashboard/report.md`     | GET    | Markdown last-24h attack report    |
 | `/dashboard/session/{id}`  | GET    | HTML partial for one session card (htmx swap target) |
 | `/dashboard/sequence/{id}` | GET    | SVG per-session sequence diagram   |
 | `/dashboard/sankey.svg`    | GET    | Persona-vs-reality sankey image    |
-| `/dashboard/heatmap.svg`   | GET    | Detector co-occurrence heatmap     |
+| `/dashboard/heatmap.svg`   | GET    | Detector co-occurrence heatmap (planned SVG export; table is in `/dashboard`) |
 
 Every endpoint is content-negotiated. `Accept: application/json` returns
 machine-readable data so the same routes work for embedded reports and

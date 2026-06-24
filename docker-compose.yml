@@ -30,7 +30,11 @@ services:
         max-file: "3"
 
   honeymcp:
-    build: .
+    build:
+      context: .
+      args:
+        HONEYMCP_GIT_SHA: ${HONEYMCP_GIT_SHA:-unknown}
+        HONEYMCP_BUILD_UNIX_TS: ${HONEYMCP_BUILD_UNIX_TS:-}
     image: honeymcp:0.7.0
 
     container_name: honeymcp

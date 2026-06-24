@@ -13,7 +13,7 @@
 
 **Status:** Building toward v1.0 on a 28-day sprint. Currently speaks Streamable HTTP (MCP spec 2025-06-18) and legacy HTTP+SSE side by side.
 
-**Live:** [operator banner](http://54.169.235.208/) + [dashboard](http://54.169.235.208/dashboard).
+**Live:** [operator banner](http://54.169.235.208/) + [operator-auth dashboard](http://54.169.235.208/dashboard).
 
 ## What this is
 
@@ -23,7 +23,7 @@ It's one Rust binary. About 15 MB, SQLite on disk, fits in 256 MiB of RAM. You r
 
 What lands in SQLite: timestamp, method, IP, User-Agent, client name and version, the `Mcp-Session-Id` they used, the `MCP-Protocol-Version` they claimed, and a SHA-256 of the raw params so reruns correlate. Eleven detectors tag events at write time, so you can grep for "prompt-injection traffic that also did tool-enumeration" without scanning the whole DB.
 
-It's not a proxy. It won't protect your production MCP server. It's a trap you put on the internet to learn from. `GET /` returns a plain-text banner saying exactly that with a GDPR erasure contact. `GET /dashboard` is a server-rendered analyst surface (Attack Story Timeline grouped per session + per-session MCP Sequence Diagram SVG at `/dashboard/sequence/<id>.svg`); operator traffic is filtered out by default with a `?include_operator=true` toggle. No admin panel, no write path exposed to the network.
+It's not a proxy. It won't protect your production MCP server. It's a trap you put on the internet to learn from. `GET /` returns a plain-text banner saying exactly that with a GDPR erasure contact. `GET /dashboard` is a server-rendered analyst surface (attack-intelligence overview, source-country map, campaign grouping, live feed, Attack Story Timeline, per-session MCP Sequence Diagram SVG at `/dashboard/sequence/<id>.svg`, and markdown report at `/dashboard/report.md`); operator traffic is filtered out by default with a `?include_operator=true` toggle. No admin panel, no write path exposed to the network.
 
 `honeymcp-probes` is the second binary in this crate. It fires the same 13 payloads the detectors are tuned for, so you can audit your own MCP server without standing up a honeypot. Same codebase, same taxonomy.
 
@@ -37,11 +37,11 @@ MCP is a young protocol with a rapidly growing attack surface: **tool poisoning*
 - Speaks **Streamable HTTP** (MCP spec 2025-06-18): `POST /mcp` with `Accept`-based negotiation (JSON or single-message SSE), `GET /mcp` for server-to-client SSE, `DELETE /mcp` for explicit session teardown, session identified by `Mcp-Session-Id` header.
 - Speaks **legacy HTTP+SSE** (`POST /message`, `GET /sse`) for older clients that have not moved to the 2025-06-18 transport yet.
 - Handles `initialize`, `tools/list`, `tools/call`, and the common `notifications/*` frames.
-- Records a curated allowlist of high-signal request headers (`MCP-Protocol-Version`, `X-Forwarded-For`, `Authorization`, `Origin`, `Referer`, `CF-Connecting-IP`, `CF-IPCountry`, `X-Real-IP`, `Accept`, `User-Agent`, and more) into `client_meta`, and logs non-MCP scan paths (`/.env`, `/.git/config`, ...) as `probe` events that still run through the detectors.
+- Records a curated allowlist of high-signal request headers (`MCP-Protocol-Version`, `X-Forwarded-For`, `Authorization`, `Origin`, `Referer`, `CF-Connecting-IP`, `CF-IPCountry`, `GeoIP-Country`, `X-Real-IP`, `Accept`, `User-Agent`, and more) into `client_meta`, and logs non-MCP scan paths (`/.env`, `/.git/config`, ...) as `probe` events that still run through the detectors.
 - Loads **personas** from YAML - server name, version, instructions, and a list of fake tools with canned responses, with optional `{{canary.*}}` and `{{arg.*}}` response templating.
 - Serves **several personas from one process**, routed by URL path (`/<persona>/mcp`); the default image runs `aws-admin` (cloud ops with live canary credentials), `github-admin`, `vercel-admin`, and `stripe-finance` together, with `postgres-admin` and `filesystem-admin` also bundled.
 - Ships as a **Docker image** for one-command deploy; release builds are cosign-keyless-signed with SPDX + CycloneDX SBOMs attached and **SLSA Level 3 build provenance** verifiable via `gh attestation verify` (recipe in [`docs/SLSA.md`](docs/SLSA.md)).
-- Serves an **operator banner** (research-honeypot disclosure + GDPR contact) at `GET /` and a server-rendered **analyst dashboard** at `/dashboard` (Attack Story Timeline + per-session MCP Sequence Diagram, all assets bundled in the binary, design in [`docs/dashboard-v2-design.md`](docs/dashboard-v2-design.md)).
+- Serves an **operator banner** (research-honeypot disclosure + GDPR contact) at `GET /` and a server-rendered **analyst dashboard** at `/dashboard` (attack classes, campaigns, Geo-IP pulse map, detector co-occurrence heatmap, MCP risk score, live SSE feed, markdown report, Attack Story Timeline, and per-session MCP Sequence Diagram; all assets bundled in the binary, design in [`docs/dashboard-v2-design.md`](docs/dashboard-v2-design.md)).
 - Runs **eleven threat detectors** (prompt injection, shell injection, CVE-2025-59536-class hook injection, secret exfil, unicode anomaly, recon, tool enumeration, IMDS-SSRF, path traversal, AWS tool-intent, scanner fingerprinting) on every request, tagging events at write time. Each detection carries its **MITRE ATT&CK / ATLAS technique IDs** in the `detections.mitre_techniques` column so SIEM consumers can pivot on technique without re-deriving the mapping. Full mapping in [`docs/MITRE-MAPPING.md`](docs/MITRE-MAPPING.md).
 - Logs every request/response to **SQLite** (primary, queryable) and optionally mirrors to **JSONL** (grep/jq-friendly), including timestamp, method, SHA-256 of params, raw params, client name/version, session id, transport, remote address, and User-Agent.
 - **Tags operator traffic** at write time (`is_operator` column). `/stats` excludes probes and validation curls by default so any number a third party reads is the external-only corpus; pass `?include_operator=true` to fold them back in.
@@ -280,7 +280,7 @@ for this line and tracked separately if they ever come back.
 | Track | Focus | Status |
 |------|-------|--------|
 | Foundation | stdio + Streamable HTTP + legacy HTTP+SSE, 7 detectors, CI (fmt + clippy + test matrix + audit + deny + coverage), signed release workflow + cosign + SBOMs, threat model + GDPR LIA | ✅ `v0.6.0` shipped 2026-04-27 |
-| Operator surface | Operator banner, `/version` build provenance, `is_operator` traffic filter, server-rendered analyst dashboard (Attack Story Timeline + per-session MCP Sequence Diagram) | ✅ shipped on `v0.6` line |
+| Operator surface | Operator banner, `/version` build provenance, `is_operator` traffic filter, server-rendered analyst dashboard (attack-intel overview, campaigns, Geo-IP pulse map, heatmap, live feed, report, Attack Story Timeline + per-session MCP Sequence Diagram) | ✅ shipped on `v0.6`/`v0.7` line |
 | Persona library | `postgres-admin`, `github-admin`, `vercel-admin`, `stripe-finance` shipped; `figma-dev` / `cloudflare-edge` / `linear-pm` open as `good first issue` | 4 of 7 shipped |
 | Storage backends | SQLite is the operator default. Postgres + pgvector lives behind `--features postgres` with the migration set ready; the recorder side is scaffold-only and lights up when corpus growth justifies it | scaffold |
 | Observability | `--features otel` wires the OTLP exporter (`tracing-opentelemetry`); `HONEYMCP_LOG_FORMAT=json` for ndjson stderr; `Dispatcher::handle_request` is `#[instrument]`-ed | code ready, production wiring pending (see [`docs/scope-decisions.md`](docs/scope-decisions.md)) |

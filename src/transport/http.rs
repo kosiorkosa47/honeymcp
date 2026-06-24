@@ -138,6 +138,7 @@ const CAPTURED_HEADERS: &[&str] = &[
     "cf-connecting-ip",
     "cf-ipcountry",
     "cf-ray",
+    "geoip-country",
     "true-client-ip",
     "x-client-ip",
     "via",
@@ -315,6 +316,15 @@ impl Transport for HttpTransport {
                 };
                 Router::new()
                     .route("/dashboard", get(crate::dashboard::index_handler))
+                    .route("/dashboard/feed", get(crate::dashboard::feed_handler))
+                    .route(
+                        "/dashboard/report.md",
+                        get(crate::dashboard::report_handler),
+                    )
+                    .route(
+                        "/dashboard/sankey.svg",
+                        get(crate::dashboard::sankey_handler),
+                    )
                     .route(
                         "/dashboard/sequence/:session_id_svg",
                         get(crate::dashboard::sequence_handler),
@@ -864,6 +874,7 @@ mod tests {
         h.insert("accept", "application/json".parse().unwrap());
         h.insert("authorization", "Bearer attacker-token".parse().unwrap());
         h.insert("cf-ipcountry", "CN".parse().unwrap());
+        h.insert("geoip-country", "NL".parse().unwrap());
         h.insert("origin", "https://evil.test".parse().unwrap());
         h.insert("x-forwarded-for", "203.0.113.7, 10.0.0.1".parse().unwrap());
 
@@ -876,6 +887,7 @@ mod tests {
         // Curated headers captured, hyphens normalised to underscores.
         assert_eq!(m["authorization"], "Bearer attacker-token");
         assert_eq!(m["cf_ipcountry"], "CN");
+        assert_eq!(m["geoip_country"], "NL");
         assert_eq!(m["origin"], "https://evil.test");
     }
 

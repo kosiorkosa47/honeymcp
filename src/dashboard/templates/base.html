@@ -20,7 +20,9 @@
   </div>
   <nav class="hm-nav">
     <a href="/dashboard">timeline</a>
-    <a href="/dashboard?view=feed">live feed</a>
+    <a href="/dashboard?view=feed#live-feed">live feed</a>
+    <a href="/dashboard/report.md" target="_blank">report</a>
+    <a href="/dashboard/sankey.svg" target="_blank">sankey</a>
     <a href="/version" target="_blank">version</a>
     <a href="https://github.com/kosiorkosa47/honeymcp" target="_blank">repo</a>
   </nav>
@@ -46,6 +48,8 @@ function dashboardState() {
     ws_connected: false,
     include_operator: new URLSearchParams(location.search).get('include_operator') === 'true',
     provenance: { version: '...', git_sha: '...', build_time_utc: null },
+    feed_source: null,
+    live_events: [],
     async loadProvenance() {
       try {
         const r = await fetch('/version');
@@ -58,6 +62,19 @@ function dashboardState() {
       if (!t) return '?';
       try { return new Date(t).toISOString().replace('T', ' ').replace(/:\d\d\.\d+Z$/, 'Z'); }
       catch (_) { return t; }
+    },
+    connectFeed() {
+      if (this.feed_source) return;
+      const qs = this.include_operator ? '?include_operator=true' : '';
+      this.feed_source = new EventSource(`/dashboard/feed${qs}`);
+      this.feed_source.onopen = () => { this.ws_connected = true; };
+      this.feed_source.onerror = () => { this.ws_connected = false; };
+      this.feed_source.addEventListener('event', (ev) => {
+        try {
+          const item = JSON.parse(ev.data);
+          this.live_events = [item, ...this.live_events.filter((e) => e.id !== item.id)].slice(0, 25);
+        } catch (_) {}
+      });
     },
   };
 }

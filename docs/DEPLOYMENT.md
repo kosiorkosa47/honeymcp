@@ -49,17 +49,32 @@ services:
       - --jsonl=/var/lib/honeymcp/hive.jsonl
 ```
 
-Then `docker compose up -d --force-recreate`.
+Then `docker compose up -d --force-recreate`. Keep the compose port publish
+bound to `127.0.0.1:8080`; Caddy is the only internet-facing entry point.
 
 ## Putting it on the internet
 
-The container binds `0.0.0.0:8080` on the host. To expose it on port 443 with automatic TLS, put [Caddy](https://caddyserver.com/) in front of it.
+The container publishes `127.0.0.1:8080` on the host. To expose the honeypot
+on port 80/443, put [Caddy](https://caddyserver.com/) in front of it and keep
+operator endpoints behind Basic Auth.
 
 ### `/etc/caddy/Caddyfile`
 
 ```
+{
+    servers {
+        trusted_proxies static private_ranges
+    }
+}
+
 honeymcp.example.com {
+    @operator path /dashboard /dashboard/* /stats /healthz /version
+    basic_auth @operator {
+        import /etc/honeymcp/dashboard-basic-auth
+    }
+
     reverse_proxy 127.0.0.1:8080
+
     log {
         output file /var/log/caddy/honeymcp.log
         format json
@@ -79,17 +94,28 @@ sudo apt update && sudo apt install -y caddy
 sudo systemctl reload caddy
 ```
 
-Caddy provisions a Let's Encrypt certificate for `honeymcp.example.com` automatically on first request.
+Caddy provisions a Let's Encrypt certificate for `honeymcp.example.com`
+automatically on first request. Keep the Basic Auth hash outside git:
+
+```bash
+sudo install -d -m 0755 /etc/honeymcp
+caddy hash-password
+# paste the hash, not the plaintext password:
+echo 'admin <hash>' | sudo tee /etc/honeymcp/dashboard-basic-auth >/dev/null
+sudo chmod 0640 /etc/honeymcp/dashboard-basic-auth
+sudo chown root:caddy /etc/honeymcp/dashboard-basic-auth
+```
 
 ### Firewall / `ufw`
 
-Assuming ufw is your firewall, allow HTTP + HTTPS (for Caddy) and deny direct access to 8080 from the internet:
+Assuming ufw is your firewall, allow SSH plus HTTP/HTTPS for Caddy. Do not
+allow direct access to 8080; the backend is loopback-only and should stay
+reachable only through Caddy.
 
 ```bash
 sudo ufw allow 22/tcp     # SSH
 sudo ufw allow 80/tcp     # Caddy ACME challenge
 sudo ufw allow 443/tcp    # HTTPS
-sudo ufw deny 8080/tcp    # Direct access to the honeypot backend (Caddy stays on localhost)
 sudo ufw enable
 ```
 
@@ -99,6 +125,23 @@ sudo ufw enable
 sudo iptables -A INPUT -p tcp --dport 80  -j ACCEPT
 sudo iptables -A INPUT -p tcp --dport 443 -j ACCEPT
 sudo iptables -A INPUT -p tcp --dport 8080 ! -i lo -j DROP
+```
+
+### Block container access to IMDS
+
+The honeypot container should not be able to reach cloud instance metadata
+services. Install the versioned unit from `deploy/`:
+
+```bash
+sudo cp deploy/honeymcp-imds-block.sh /usr/local/sbin/honeymcp-imds-block.sh
+sudo chmod 0755 /usr/local/sbin/honeymcp-imds-block.sh
+sudo cp deploy/honeymcp-imds-block.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now honeymcp-imds-block.service
+
+docker exec honeymcp curl -sS --connect-timeout 2 --max-time 3 \
+  http://169.254.169.254/latest/meta-data/
+# expected: connection timeout / no response
 ```
 
 ## Making the honeypot discoverable
