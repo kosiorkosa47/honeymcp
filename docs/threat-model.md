@@ -89,7 +89,7 @@ and leaking the log back to the attacker is one of the worst failure modes.
 | Detection of honeymcp via banner fingerprint | **Accepted leak.** We serve a documented research banner (`docs/legal/operator-banner.md`) at `GET /` so traffic is not misrepresented as a production service | N/A |
 | Secrets in captured payloads leak to logs / stdout | `redact_secrets` replaces known tokens (GitHub PAT, AWS access keys, PEM keys, JWTs, Slack tokens) before writing response text | Request params stored raw for forensics; redaction only applies to responses and to probe outputs |
 | Attacker reads the DB via SQL injection in some helper endpoint | No query parameters are interpolated into SQL; we use prepared statements everywhere | N/A; keep this invariant if adding endpoints |
-| `/stats` / `/dashboard` expose attacker IPs to the world | The production deployment protects `/dashboard`, `/dashboard/*`, `/stats`, `/healthz`, and `/version` with Caddy Basic Auth and keeps the container backend bound to `127.0.0.1:8080` | The binary itself still does not implement auth; direct-exposed deployments must use a trusted reverse proxy |
+| `/stats` / `/dashboard` expose attacker IPs to the world | The production deployment protects `/dashboard`, `/dashboard/*`, `/stats`, `/healthz`, and `/version` with a Caddy source allowlist plus Basic Auth, and keeps the container backend bound to `127.0.0.1:8080` | The binary itself still does not implement auth; direct-exposed deployments must use a trusted reverse proxy |
 
 ### 2.5 Denial of service
 
