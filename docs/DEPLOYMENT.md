@@ -56,7 +56,7 @@ bound to `127.0.0.1:8080`; Caddy is the only internet-facing entry point.
 
 The container publishes `127.0.0.1:8080` on the host. To expose the honeypot
 on port 80/443, put [Caddy](https://caddyserver.com/) in front of it and keep
-operator endpoints behind Basic Auth.
+operator endpoints behind a source allowlist plus Basic Auth.
 
 ### `/etc/caddy/Caddyfile`
 
@@ -69,10 +69,19 @@ operator endpoints behind Basic Auth.
 
 honeymcp.example.com {
     @operator path /dashboard /dashboard/* /stats /healthz /version
-    basic_auth @operator {
-        import /etc/honeymcp/dashboard-basic-auth
+    @operator_allowed {
+        path /dashboard /dashboard/* /stats /healthz /version
+        import /etc/honeymcp/operator-allowlist
     }
 
+    route @operator_allowed {
+        basic_auth {
+            import /etc/honeymcp/dashboard-basic-auth
+        }
+        reverse_proxy 127.0.0.1:8080
+    }
+
+    respond @operator "not found" 404
     reverse_proxy 127.0.0.1:8080
 
     log {
@@ -104,6 +113,15 @@ caddy hash-password
 echo 'admin <hash>' | sudo tee /etc/honeymcp/dashboard-basic-auth >/dev/null
 sudo chmod 0640 /etc/honeymcp/dashboard-basic-auth
 sudo chown root:caddy /etc/honeymcp/dashboard-basic-auth
+```
+
+Create the operator source allowlist locally on the host. Do not commit the
+real address to the repository:
+
+```bash
+echo 'remote_ip <operator-ip-or-cidr>' | sudo tee /etc/honeymcp/operator-allowlist >/dev/null
+sudo chmod 0640 /etc/honeymcp/operator-allowlist
+sudo chown root:caddy /etc/honeymcp/operator-allowlist
 ```
 
 ### Firewall / `ufw`

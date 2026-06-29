@@ -106,7 +106,7 @@ Operators must be prepared to honour:
 |---|---|
 | Encryption at rest | Operator chooses disk encryption (FDE recommended). honeymcp does not separately encrypt the SQLite file. |
 | Encryption in transit | TLS terminated at the reverse proxy (Caddy / nginx / Cloudflare). honeymcp does not terminate TLS itself. |
-| Access controls | OS-level. Dashboard is unauthenticated; operator must restrict via VPN / reverse-proxy auth if desired. |
+| Access controls | OS-level. The production deployment keeps the dashboard behind reverse-proxy source allowlisting plus Basic Auth; the binary itself does not implement authentication. |
 | Secret redaction in outputs | Automatic for known patterns (GitHub PAT, AWS keys, JWTs, PEM blocks, Slack tokens). See `src/bin/probes.rs::redact_secrets`. |
 | Logging integrity | Append-only DB row pattern. Operator-side tampering is out of the threat model. |
 | Backups | Operator choice. Any backup is subject to the same retention policy. |

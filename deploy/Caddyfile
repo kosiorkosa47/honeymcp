@@ -6,13 +6,25 @@
 
 :80 {
 	@operator path /dashboard /dashboard/* /stats /healthz /version
-	basic_auth @operator {
-		# Keep the credential hash out of git. The imported file should contain
-		# one Caddy basic_auth line, for example:
-		#   admin $2a$14$...
-		import /etc/honeymcp/dashboard-basic-auth
+	@operator_allowed {
+		path /dashboard /dashboard/* /stats /healthz /version
+		# Keep source allowlists out of git. The imported file should contain
+		# one or more Caddy IP matcher lines, for example:
+		#   remote_ip <operator-ip-or-cidr>
+		import /etc/honeymcp/operator-allowlist
 	}
 
+	route @operator_allowed {
+		basic_auth {
+			# Keep the credential hash out of git. The imported file should contain
+			# one Caddy basic_auth line, for example:
+			#   admin $2a$14$...
+			import /etc/honeymcp/dashboard-basic-auth
+		}
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	respond @operator "not found" 404
 	reverse_proxy 127.0.0.1:8080
 
 	log {

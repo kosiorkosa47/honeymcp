@@ -27,8 +27,9 @@ analyst dashboard at `/dashboard`.
 
 The application surface is intentionally minimal. In the production Caddy
 deployment, `/dashboard`, `/dashboard/*`, `/stats`, `/healthz`, and
-`/version` are operator-only behind Basic Auth; public traffic reaches only
-the banner and MCP honeypot paths. The container port is bound to loopback.
+`/version` are operator-only behind a host-local source allowlist plus Basic
+Auth; public traffic reaches only the banner and MCP honeypot paths. The
+container port is bound to loopback.
 
 | Path | Purpose |
 | --- | --- |

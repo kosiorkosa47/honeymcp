@@ -51,9 +51,16 @@
 
 ### Security
 
+- Production Caddy deployments now require a host-local source allowlist in
+  addition to Basic Auth for `/dashboard`, `/dashboard/*`, `/stats`,
+  `/healthz`, and `/version`; the real operator address stays in
+  `/etc/honeymcp/operator-allowlist` and is not committed.
 - The honeypot container binds to `127.0.0.1:8080`; all external traffic
   reaches it through Caddy, so the backend is no longer directly addressable on
   the internet on port 8080.
+- The host hardening script now installs an sshd drop-in that disables password
+  and keyboard-interactive auth, disables root login, limits auth retries, and
+  restricts logins to the expected `ubuntu` operator user.
 
 ### CI / infrastructure
 

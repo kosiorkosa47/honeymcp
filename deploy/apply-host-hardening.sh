@@ -4,6 +4,10 @@ set -eu
 REPO=${REPO:-/home/ubuntu/honeymcp}
 CADDYFILE_SRC=${CADDYFILE_SRC:-$REPO/deploy/Caddyfile}
 DASHBOARD_AUTH_FILE=${DASHBOARD_AUTH_FILE:-/etc/honeymcp/dashboard-basic-auth}
+OPERATOR_ALLOWLIST_FILE=${OPERATOR_ALLOWLIST_FILE:-/etc/honeymcp/operator-allowlist}
+SSHD_HARDENING_SRC=${SSHD_HARDENING_SRC:-$REPO/deploy/sshd-hardening.conf}
+SSHD_HARDENING_DST=${SSHD_HARDENING_DST:-/etc/ssh/sshd_config.d/99-honeymcp-hardening.conf}
+SSHD_BIN=${SSHD_BIN:-/usr/sbin/sshd}
 
 if [ "$(id -u)" -eq 0 ]; then
 	SUDO=
@@ -21,6 +25,7 @@ require_file() {
 install_caddyfile() {
 	require_file "$CADDYFILE_SRC"
 	require_file "$DASHBOARD_AUTH_FILE"
+	require_file "$OPERATOR_ALLOWLIST_FILE"
 
 	tmp=$($SUDO mktemp /tmp/honeymcp-caddy.XXXXXX)
 	$SUDO install -m 0644 "$CADDYFILE_SRC" "$tmp"
@@ -40,12 +45,25 @@ install_imds_block() {
 	$SUDO systemctl enable --now honeymcp-imds-block.service >/dev/null
 }
 
+install_sshd_hardening() {
+	if [ -d /etc/ssh/sshd_config.d ] && [ -x "$SSHD_BIN" ]; then
+		require_file "$SSHD_HARDENING_SRC"
+		$SUDO install -m 0644 "$SSHD_HARDENING_SRC" "$SSHD_HARDENING_DST"
+		$SUDO "$SSHD_BIN" -t
+		$SUDO systemctl reload ssh >/dev/null 2>&1 || \
+			$SUDO systemctl reload sshd >/dev/null 2>&1 || true
+	fi
+}
+
 lock_down_ufw() {
 	if command -v ufw >/dev/null 2>&1; then
+		$SUDO ufw limit 22/tcp >/dev/null 2>&1 || true
+		printf 'y\n' | $SUDO ufw delete allow 22/tcp >/dev/null 2>&1 || true
 		printf 'y\n' | $SUDO ufw delete allow 8080/tcp >/dev/null 2>&1 || true
 	fi
 }
 
 install_caddyfile
 install_imds_block
+install_sshd_hardening
 lock_down_ufw
