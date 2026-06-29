@@ -65,6 +65,15 @@ sudo chmod 0640 /etc/honeymcp/dashboard-basic-auth
 sudo chown root:caddy /etc/honeymcp/dashboard-basic-auth
 ```
 
+Create the operator source allowlist locally on the host. Keep the real address
+out of git:
+
+```bash
+echo 'remote_ip <operator-ip-or-cidr>' | sudo tee /etc/honeymcp/operator-allowlist >/dev/null
+sudo chmod 0640 /etc/honeymcp/operator-allowlist
+sudo chown root:caddy /etc/honeymcp/operator-allowlist
+```
+
 Install the host-side hardening units as part of a rebuild. The auto-deploy
 script also runs this on every successful `main` deploy so the live box
 converges back to the versioned host configuration.
