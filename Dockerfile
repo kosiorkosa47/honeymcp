@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM rust:1.89-slim-bookworm AS builder
+FROM rust:1.97-slim-bookworm AS builder
 WORKDIR /build
 ARG HONEYMCP_GIT_SHA=unknown
 ARG HONEYMCP_BUILD_UNIX_TS
