@@ -561,7 +561,19 @@ async fn load_analytics(
         .logger
         .events_with_detections_since(now - ANALYTICS_WINDOW_MS, ANALYTICS_LIMIT, include_operator)
         .await?;
-    let analytics = analytics::build_dashboard_analytics(&rows, now);
+    let mut analytics = analytics::build_dashboard_analytics(&rows, now);
+    analytics.canary_correlations = state
+        .logger
+        .recent_canary_correlations(
+            now - ANALYTICS_WINDOW_MS,
+            ANALYTICS_WINDOW_MS,
+            12,
+            include_operator,
+        )
+        .await?
+        .iter()
+        .map(|row| analytics::canary_correlation(row, now))
+        .collect();
     Ok((rows, analytics))
 }
 

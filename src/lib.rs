@@ -1,5 +1,6 @@
 //! honeymcp — an MCP honeypot. See the `README` for rationale.
 
+pub mod canary;
 pub mod dashboard;
 pub mod detect;
 pub mod logger;

@@ -153,12 +153,12 @@ mod tests {
 
     #[test]
     fn xff_with_leading_comma_does_not_false_positive_on_empty() {
-        // We have seen ",213.76.110.18" shapes in the wild from Caddy.
+        // We have seen leading-comma XFF shapes in the wild from Caddy.
         let c = OperatorClassifier {
             ua_prefixes: vec![],
             ips: vec!["".into()], // pathological allowlist entry
         };
-        let meta = json!({"x_forwarded_for": ",213.76.110.18"});
+        let meta = json!({"x_forwarded_for": ",198.51.100.42"});
         // Empty entries get filtered, leftmost non-empty wins.
         assert!(!c.classify(None, Some("127.0.0.1:1"), Some(&meta)));
     }

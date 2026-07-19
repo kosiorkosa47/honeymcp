@@ -134,10 +134,10 @@ impl Dispatcher {
         req: &JsonRpcRequest,
         persona: &Persona,
         state: &mut SessionState,
-    ) -> (String, Option<JsonRpcResponse>) {
+    ) -> (String, Option<JsonRpcResponse>, Vec<String>) {
         let id = match req.id.clone() {
             Some(id) => id,
-            None => return ("initialize-without-id".into(), None),
+            None => return ("initialize-without-id".into(), None, Vec::new()),
         };
         let parsed: Result<InitializeParams, _> = match &req.params {
             Some(p) => serde_json::from_value(p.clone()),
@@ -167,6 +167,7 @@ impl Dispatcher {
                 state.client_name.as_deref().unwrap_or("?")
             ),
             Some(JsonRpcResponse::ok(id, value)),
+            Vec::new(),
         )
     }
 
@@ -174,10 +175,10 @@ impl Dispatcher {
         &self,
         req: &JsonRpcRequest,
         persona: &Persona,
-    ) -> (String, Option<JsonRpcResponse>) {
+    ) -> (String, Option<JsonRpcResponse>, Vec<String>) {
         let id = match req.id.clone() {
             Some(id) => id,
-            None => return ("tools/list-without-id".into(), None),
+            None => return ("tools/list-without-id".into(), None, Vec::new()),
         };
         let tools = persona.mcp_tools();
         let result = ToolsListResult { tools };
@@ -185,6 +186,7 @@ impl Dispatcher {
         (
             format!("tools/list n={}", persona.tools.len()),
             Some(JsonRpcResponse::ok(id, value)),
+            Vec::new(),
         )
     }
 
@@ -192,10 +194,10 @@ impl Dispatcher {
         &self,
         req: &JsonRpcRequest,
         persona: &Persona,
-    ) -> (String, Option<JsonRpcResponse>) {
+    ) -> (String, Option<JsonRpcResponse>, Vec<String>) {
         let id = match req.id.clone() {
             Some(id) => id,
-            None => return ("tools/call-without-id".into(), None),
+            None => return ("tools/call-without-id".into(), None, Vec::new()),
         };
         let params: ToolCallParams = match req.params.clone() {
             Some(v) => match serde_json::from_value(v) {
@@ -207,6 +209,7 @@ impl Dispatcher {
                             id,
                             JsonRpcError::new(ErrorCode::InvalidParams, e.to_string()),
                         )),
+                        Vec::new(),
                     )
                 }
             },
@@ -217,12 +220,13 @@ impl Dispatcher {
                         id,
                         JsonRpcError::new(ErrorCode::InvalidParams, "missing params"),
                     )),
+                    Vec::new(),
                 )
             }
         };
 
-        match persona.response_for(&params.name, &params.arguments, &self.canaries) {
-            Some(content) => {
+        match persona.response_for_with_markers(&params.name, &params.arguments, &self.canaries) {
+            Some((content, canary_markers)) => {
                 let result = ToolCallResult {
                     content: vec![content],
                     is_error: Some(false),
@@ -231,6 +235,7 @@ impl Dispatcher {
                 (
                     format!("tools/call name={}", params.name),
                     Some(JsonRpcResponse::ok(id, value)),
+                    canary_markers,
                 )
             }
             None => (
@@ -242,6 +247,7 @@ impl Dispatcher {
                         format!("unknown tool: {}", params.name),
                     ),
                 )),
+                Vec::new(),
             ),
         }
     }
@@ -253,6 +259,7 @@ impl Dispatcher {
         ctx: &RequestContext,
         persona_name: &str,
         state: &SessionState,
+        canary_markers: &[String],
     ) {
         let is_operator = self.operator.classify(
             ctx.user_agent.as_deref(),
@@ -275,14 +282,20 @@ impl Dispatcher {
             persona: Some(persona_name.to_string()),
             is_operator,
         };
-        self.persist_and_detect(entry, &state.stats).await;
+        self.persist_and_detect(entry, &state.stats, canary_markers)
+            .await;
     }
 
     /// Persist one event and run the detector registry against it. Shared by
     /// the JSON-RPC dispatch path and the non-MCP probe path so both land in
     /// the same events + detections tables (and the same dashboard + STIX
     /// export).
-    async fn persist_and_detect(&self, entry: LogEntry, stats: &SessionStats) {
+    async fn persist_and_detect(
+        &self,
+        entry: LogEntry,
+        stats: &SessionStats,
+        canary_markers: &[String],
+    ) {
         let ts = entry.timestamp_ms;
         let event_id = match self.logger.record(&entry).await {
             Ok(id) => Some(id),
@@ -294,6 +307,13 @@ impl Dispatcher {
         debug!(method = %entry.method, "logged event");
 
         if let Some(event_id) = event_id {
+            if let Err(e) = self
+                .logger
+                .record_canary_exposures(event_id, ts, canary_markers)
+                .await
+            {
+                warn!(error = %e, "failed to persist canary exposure");
+            }
             if !self.registry.is_empty() {
                 let detections = self.registry.analyze_all(&DetectionContext {
                     entry: &entry,
@@ -363,11 +383,13 @@ impl Handler for Dispatcher {
             _ => {}
         }
 
-        let (summary, response) = match req.method.as_str() {
+        let (summary, response, canary_markers) = match req.method.as_str() {
             "initialize" => self.on_initialize(&req, &persona, &mut state),
             "tools/list" => self.on_tools_list(&req, &persona),
             "tools/call" => self.on_tools_call(&req, &persona),
-            "notifications/initialized" | "notifications/cancelled" => ("noop".to_string(), None),
+            "notifications/initialized" | "notifications/cancelled" => {
+                ("noop".to_string(), None, Vec::new())
+            }
             other => (
                 format!("method-not-found:{other}"),
                 Some(JsonRpcResponse::err(
@@ -377,10 +399,11 @@ impl Handler for Dispatcher {
                         format!("unknown method: {other}"),
                     ),
                 )),
+                Vec::new(),
             ),
         };
 
-        self.log_interaction(&req, &summary, &ctx, &persona.name, &state)
+        self.log_interaction(&req, &summary, &ctx, &persona.name, &state, &canary_markers)
             .await;
 
         if req.is_notification() {
@@ -436,7 +459,7 @@ impl Handler for Dispatcher {
             persona: None,
             is_operator,
         };
-        self.persist_and_detect(entry, &SessionStats::default())
+        self.persist_and_detect(entry, &SessionStats::default(), &[])
             .await;
     }
 }

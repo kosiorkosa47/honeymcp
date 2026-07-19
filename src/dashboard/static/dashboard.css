@@ -252,6 +252,59 @@ body {
 .hm-risk-meter { height: 7px; margin-bottom: 12px; }
 .hm-risk-meter span { background: linear-gradient(90deg, var(--hm-accent), var(--hm-warn), var(--hm-crit)); }
 
+.hm-canary-panel { margin-bottom: 18px; }
+.hm-canary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hm-canary-row {
+  border-top: 1px solid var(--hm-rule);
+  padding-top: 10px;
+  display: grid;
+  gap: 6px;
+}
+.hm-canary-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.hm-canary-flow,
+.hm-canary-meta,
+.hm-canary-detail {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.hm-canary-flow code,
+.hm-canary-detail code {
+  color: var(--hm-accent);
+  background: var(--hm-bg);
+  border: 1px solid var(--hm-rule);
+  border-radius: 2px;
+  padding: 1px 5px;
+  overflow-wrap: anywhere;
+}
+.hm-canary-flow span {
+  color: var(--hm-fg);
+  overflow-wrap: anywhere;
+}
+.hm-canary-flow span::before {
+  content: ">";
+  color: var(--hm-fg-muted);
+  margin-right: 8px;
+}
+.hm-canary-meta,
+.hm-canary-detail {
+  color: var(--hm-fg-dim);
+  font-size: 11px;
+}
+.hm-canary-detail span {
+  color: var(--hm-fg-muted);
+  overflow-wrap: anywhere;
+}
+
 .hm-kv {
   display: grid;
   grid-template-columns: 1fr;
