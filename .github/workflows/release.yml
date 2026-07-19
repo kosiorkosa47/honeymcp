@@ -109,7 +109,7 @@ jobs:
       # with `gh attestation verify <artifact> --owner kosiorkosa47`.
       # See docs/SLSA.md for the verification workflow.
       - name: Generate SLSA build provenance
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: ${{ env.ASSET }}
 
@@ -211,7 +211,7 @@ jobs:
       # and `gh attestation verify-image` both resolve the signed predicate
       # without a separate file. Verification recipe in docs/SLSA.md.
       - name: Generate SLSA build provenance for image
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ghcr.io/${{ github.repository }}
           subject-digest: ${{ steps.push.outputs.digest }}
