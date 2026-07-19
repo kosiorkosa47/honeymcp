@@ -23,6 +23,7 @@ use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
+use crate::canary::{CanaryHit, CanaryImportSummary};
 use crate::detect::Detection;
 
 /// A single request/response interaction that we persist for later analysis.
@@ -132,6 +133,40 @@ impl Logger {
             CREATE INDEX IF NOT EXISTS idx_detections_event    ON detections(event_id);
             CREATE INDEX IF NOT EXISTS idx_detections_category ON detections(category);
             CREATE INDEX IF NOT EXISTS idx_detections_severity ON detections(severity);
+
+            CREATE TABLE IF NOT EXISTS canary_exposures (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id      INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+                timestamp_ms  INTEGER NOT NULL,
+                marker        TEXT    NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_canary_exposures_event_marker
+                ON canary_exposures(event_id, marker);
+            CREATE INDEX IF NOT EXISTS idx_canary_exposures_marker
+                ON canary_exposures(marker);
+            CREATE INDEX IF NOT EXISTS idx_canary_exposures_timestamp
+                ON canary_exposures(timestamp_ms);
+
+            CREATE TABLE IF NOT EXISTS canary_hits (
+                id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                observed_at_ms        INTEGER NOT NULL,
+                token_type            TEXT,
+                provider_event        TEXT,
+                later_token_use_ip    TEXT,
+                user_agent            TEXT,
+                account_id            TEXT,
+                input_channel         TEXT,
+                alert_status          TEXT,
+                marker                TEXT,
+                geo_json              TEXT,
+                raw_hash              TEXT    NOT NULL UNIQUE
+            );
+            CREATE INDEX IF NOT EXISTS idx_canary_hits_observed
+                ON canary_hits(observed_at_ms);
+            CREATE INDEX IF NOT EXISTS idx_canary_hits_marker
+                ON canary_hits(marker);
+            CREATE INDEX IF NOT EXISTS idx_canary_hits_later_ip
+                ON canary_hits(later_token_use_ip);
             "#,
         )
         .context("initializing events + detections schema")?;
@@ -300,6 +335,172 @@ impl Logger {
             .context("inserting detection row")?;
         }
         Ok(())
+    }
+
+    pub async fn record_canary_exposures(
+        &self,
+        event_id: i64,
+        timestamp_ms: i64,
+        markers: &[String],
+    ) -> Result<()> {
+        if markers.is_empty() {
+            return Ok(());
+        }
+        let db = self.inner.db.lock().await;
+        let mut stmt = db
+            .prepare_cached(
+                "INSERT OR IGNORE INTO canary_exposures
+                    (event_id, timestamp_ms, marker)
+                 VALUES (?1, ?2, ?3)",
+            )
+            .context("preparing canary exposure insert")?;
+        for marker in markers {
+            stmt.execute(params![event_id, timestamp_ms, marker])
+                .context("inserting canary exposure row")?;
+        }
+        Ok(())
+    }
+
+    pub async fn import_canary_hits(&self, hits: &[CanaryHit]) -> Result<CanaryImportSummary> {
+        let db = self.inner.db.lock().await;
+        let mut inserted = 0usize;
+        let mut ignored = 0usize;
+        let mut stmt = db
+            .prepare_cached(
+                "INSERT OR IGNORE INTO canary_hits
+                    (observed_at_ms, token_type, provider_event, later_token_use_ip,
+                     user_agent, account_id, input_channel, alert_status, marker,
+                     geo_json, raw_hash)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            )
+            .context("preparing canary hit insert")?;
+        for hit in hits {
+            let geo_json = hit
+                .geo_json
+                .as_ref()
+                .map(|v| serde_json::to_string(v).unwrap_or_default());
+            let n = stmt
+                .execute(params![
+                    hit.observed_at_ms,
+                    hit.token_type.as_deref(),
+                    hit.provider_event.as_deref(),
+                    hit.later_token_use_ip.as_deref(),
+                    hit.user_agent.as_deref(),
+                    hit.account_id.as_deref(),
+                    hit.input_channel.as_deref(),
+                    hit.alert_status.as_deref(),
+                    hit.marker.as_deref(),
+                    geo_json,
+                    hit.raw_hash.as_str(),
+                ])
+                .context("inserting canary hit row")?;
+            if n == 0 {
+                ignored += 1;
+            } else {
+                inserted += 1;
+            }
+        }
+        Ok(CanaryImportSummary {
+            total: hits.len(),
+            inserted,
+            ignored,
+        })
+    }
+
+    pub async fn canary_backfill_events(&self) -> Result<Vec<CanaryBackfillEvent>> {
+        let db = self.inner.db.lock().await;
+        let mut stmt = db
+            .prepare(
+                "SELECT id, timestamp_ms, persona, params
+                 FROM events
+                 WHERE method = 'tools/call'
+                 ORDER BY id ASC",
+            )
+            .context("preparing canary backfill query")?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(CanaryBackfillEvent {
+                    event_id: r.get(0)?,
+                    timestamp_ms: r.get(1)?,
+                    persona: r.get(2)?,
+                    params: r.get(3)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    pub async fn recent_canary_correlations(
+        &self,
+        since_hit_ms: i64,
+        max_delay_ms: i64,
+        limit: i64,
+        include_operator: bool,
+    ) -> Result<Vec<CanaryCorrelationRow>> {
+        let db = self.inner.db.lock().await;
+        let op_filter = if include_operator {
+            ""
+        } else {
+            "AND e.is_operator = 0"
+        };
+        let sql = format!(
+            "SELECT
+               h.id,
+               h.observed_at_ms,
+               h.token_type,
+               h.provider_event,
+               h.later_token_use_ip,
+               h.user_agent,
+               h.account_id,
+               h.marker,
+               ce.marker,
+               e.id,
+               e.timestamp_ms,
+               e.remote_addr,
+               e.persona,
+               e.method,
+               e.params,
+               e.response_summary,
+               h.observed_at_ms - e.timestamp_ms AS delay_ms
+             FROM canary_hits h
+             JOIN canary_exposures ce
+               ON h.marker IS NULL OR h.marker = ce.marker
+             JOIN events e
+               ON e.id = ce.event_id
+             WHERE h.observed_at_ms >= ?1
+               AND e.timestamp_ms <= h.observed_at_ms
+               AND h.observed_at_ms - e.timestamp_ms <= ?2
+               {op_filter}
+             ORDER BY h.observed_at_ms DESC, delay_ms ASC, e.id DESC
+             LIMIT ?3"
+        );
+        let mut stmt = db.prepare(&sql)?;
+        let rows = stmt
+            .query_map(params![since_hit_ms, max_delay_ms, limit], |r| {
+                Ok(CanaryCorrelationRow {
+                    hit_id: r.get(0)?,
+                    hit_timestamp_ms: r.get(1)?,
+                    token_type: r.get(2)?,
+                    provider_event: r.get(3)?,
+                    later_token_use_ip: r.get(4)?,
+                    hit_user_agent: r.get(5)?,
+                    account_id: r.get(6)?,
+                    hit_marker: r.get(7)?,
+                    canary_marker: r.get(8)?,
+                    event_id: r.get(9)?,
+                    exposure_timestamp_ms: r.get(10)?,
+                    exposure_source_ip: r.get(11)?,
+                    persona: r.get(12)?,
+                    method: r.get(13)?,
+                    params: r.get(14)?,
+                    response_summary: r.get(15)?,
+                    delay_ms: r.get(16)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
     }
 
     pub async fn count_events(&self, include_operator: bool) -> Result<i64> {
@@ -623,6 +824,35 @@ pub struct RawEventRow {
     pub detections_json: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct CanaryBackfillEvent {
+    pub event_id: i64,
+    pub timestamp_ms: i64,
+    pub persona: Option<String>,
+    pub params: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CanaryCorrelationRow {
+    pub hit_id: i64,
+    pub hit_timestamp_ms: i64,
+    pub token_type: Option<String>,
+    pub provider_event: Option<String>,
+    pub later_token_use_ip: Option<String>,
+    pub hit_user_agent: Option<String>,
+    pub account_id: Option<String>,
+    pub hit_marker: Option<String>,
+    pub canary_marker: String,
+    pub event_id: i64,
+    pub exposure_timestamp_ms: i64,
+    pub exposure_source_ip: Option<String>,
+    pub persona: Option<String>,
+    pub method: String,
+    pub params: Option<String>,
+    pub response_summary: String,
+    pub delay_ms: i64,
+}
+
 fn add_column_if_missing(db: &Connection, table: &str, column: &str, col_type: &str) -> Result<()> {
     let existing: Vec<String> = db
         .prepare(&format!("PRAGMA table_info({table})"))?
@@ -776,5 +1006,73 @@ mod tests {
         let a = Some(serde_json::json!({"k": 1}));
         assert_eq!(hash_params(&a), hash_params(&a));
         assert_ne!(hash_params(&a), hash_params(&None));
+    }
+
+    #[tokio::test]
+    async fn correlates_canary_hits_to_exposure_events() {
+        let dir = tempdir().unwrap();
+        let logger = Logger::open(&dir.path().join("h.db"), None).await.unwrap();
+
+        let entry = LogEntry {
+            timestamp_ms: 1_000,
+            method: "tools/call".into(),
+            params_hash: hash_params(&Some(serde_json::json!({
+                "name": "get_secret_value",
+                "arguments": {"secret_name": "prod/rds/master"}
+            }))),
+            params: Some(serde_json::json!({
+                "name": "get_secret_value",
+                "arguments": {"secret_name": "prod/rds/master"}
+            })),
+            client_name: Some("probe".into()),
+            client_version: Some("1.0".into()),
+            session_id: "sess-canary".into(),
+            response_summary: "tools/call name=get_secret_value".into(),
+            transport: Some("http".into()),
+            remote_addr: Some("202.182.104.22".into()),
+            user_agent: Some("MCPProbe/1.0".into()),
+            client_meta: None,
+            persona: Some("aws-admin".into()),
+            is_operator: false,
+        };
+        let event_id = logger.record(&entry).await.unwrap();
+        logger
+            .record_canary_exposures(event_id, 1_000, &["aws_sm_akid".into()])
+            .await
+            .unwrap();
+
+        let hit = CanaryHit {
+            observed_at_ms: 61_000,
+            token_type: Some("aws_keys".into()),
+            provider_event: Some("GetCallerIdentity".into()),
+            later_token_use_ip: Some("209.250.120.16".into()),
+            user_agent: Some("Boto3/1.43.10".into()),
+            account_id: Some("194031983756".into()),
+            input_channel: Some("web".into()),
+            alert_status: Some("open".into()),
+            marker: Some("aws_sm_akid".into()),
+            geo_json: None,
+            raw_hash: "a".repeat(64),
+        };
+        let summary = logger
+            .import_canary_hits(std::slice::from_ref(&hit))
+            .await
+            .unwrap();
+        assert_eq!(summary.inserted, 1);
+        let summary = logger.import_canary_hits(&[hit]).await.unwrap();
+        assert_eq!(summary.ignored, 1);
+
+        let rows = logger
+            .recent_canary_correlations(0, 24 * 60 * 60 * 1000, 10, false)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].event_id, event_id);
+        assert_eq!(rows[0].canary_marker, "aws_sm_akid");
+        assert_eq!(
+            rows[0].later_token_use_ip.as_deref(),
+            Some("209.250.120.16")
+        );
+        assert_eq!(rows[0].delay_ms, 60_000);
     }
 }

@@ -6,7 +6,7 @@ use anyhow::{anyhow, Context, Result};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
@@ -20,6 +20,12 @@ use crate::protocol::{ServerInfo, Tool, ToolContent};
 /// still presents credible output, it just loses the second-stage "the key
 /// was used" alert that a real Thinkst canary provides.
 pub type CanaryMap = HashMap<String, String>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderedResponse {
+    pub text: String,
+    pub canary_markers: Vec<String>,
+}
 
 #[derive(Debug, Deserialize)]
 struct CanaryFile {
@@ -115,15 +121,29 @@ fn fallback_canary(name: &str) -> String {
 /// attacker-supplied tool-call arguments (echoing their own input back makes
 /// responses feel live and pulls intent into the params we log anyway).
 pub fn render_response(template: &str, args: &Value, canaries: &CanaryMap) -> String {
-    template_re()
+    render_response_with_markers(template, args, canaries).text
+}
+
+/// Render a persona response and return the canary markers referenced by the
+/// template. The marker list contains names only, never substituted values.
+pub fn render_response_with_markers(
+    template: &str,
+    args: &Value,
+    canaries: &CanaryMap,
+) -> RenderedResponse {
+    let mut markers = BTreeSet::new();
+    let text = template_re()
         .replace_all(template, |caps: &regex::Captures| {
             let kind = &caps[1];
             let name = &caps[2];
             match kind {
-                "canary" => canaries
-                    .get(name)
-                    .cloned()
-                    .unwrap_or_else(|| fallback_canary(name)),
+                "canary" => {
+                    markers.insert(name.to_string());
+                    canaries
+                        .get(name)
+                        .cloned()
+                        .unwrap_or_else(|| fallback_canary(name))
+                }
                 "arg" => match args.get(name) {
                     Some(Value::String(s)) => s.clone(),
                     Some(other) => other.to_string(),
@@ -132,7 +152,11 @@ pub fn render_response(template: &str, args: &Value, canaries: &CanaryMap) -> St
                 _ => caps[0].to_string(),
             }
         })
-        .into_owned()
+        .into_owned();
+    RenderedResponse {
+        text,
+        canary_markers: markers.into_iter().collect(),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -221,12 +245,32 @@ impl Persona {
         args: &Value,
         canaries: &CanaryMap,
     ) -> Option<ToolContent> {
-        self.tools
-            .iter()
-            .find(|t| t.name == tool_name)
-            .map(|t| ToolContent::Text {
-                text: render_response(&t.response, args, canaries),
-            })
+        self.response_for_with_markers(tool_name, args, canaries)
+            .map(|(content, _)| content)
+    }
+
+    pub fn response_for_with_markers(
+        &self,
+        tool_name: &str,
+        args: &Value,
+        canaries: &CanaryMap,
+    ) -> Option<(ToolContent, Vec<String>)> {
+        self.tools.iter().find(|t| t.name == tool_name).map(|t| {
+            let rendered = render_response_with_markers(&t.response, args, canaries);
+            (
+                ToolContent::Text {
+                    text: rendered.text,
+                },
+                rendered.canary_markers,
+            )
+        })
+    }
+
+    pub fn canary_markers_for_tool(&self, tool_name: &str) -> Option<Vec<String>> {
+        self.tools.iter().find(|t| t.name == tool_name).map(|t| {
+            render_response_with_markers(&t.response, &Value::Null, &CanaryMap::new())
+                .canary_markers
+        })
     }
 }
 
@@ -279,6 +323,10 @@ impl PersonaSet {
     pub fn resolve(&self, key: Option<&str>) -> &Arc<Persona> {
         key.and_then(|k| self.personas.get(k))
             .unwrap_or_else(|| &self.personas[&self.default_key])
+    }
+
+    pub fn by_name(&self, name: &str) -> Option<&Arc<Persona>> {
+        self.personas.values().find(|p| p.name == name)
     }
 
     /// The persona served at bare `/mcp`. Used for the `/stats` + dashboard
@@ -372,6 +420,24 @@ tools:
             out,
             "key=AKIAREAL01 role=arn:aws:iam::1234:role/admin miss="
         );
+    }
+
+    #[test]
+    fn render_returns_unique_canary_markers_without_values() {
+        let mut canaries = CanaryMap::new();
+        canaries.insert("aws_file_akid".into(), "AKIAREAL01".into());
+        canaries.insert("aws_file_secret".into(), "SECRETREAL01".into());
+        let rendered = render_response_with_markers(
+            "{{canary.aws_file_secret}} {{canary.aws_file_akid}} {{canary.aws_file_akid}}",
+            &Value::Null,
+            &canaries,
+        );
+        assert_eq!(
+            rendered.canary_markers,
+            vec!["aws_file_akid".to_string(), "aws_file_secret".to_string()]
+        );
+        assert!(rendered.text.contains("AKIAREAL01"));
+        assert!(rendered.text.contains("SECRETREAL01"));
     }
 
     #[test]

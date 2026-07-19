@@ -44,6 +44,43 @@
   </span>
 </section>
 
+<section class="hm-panel hm-canary-panel">
+  <div class="hm-panel-head">
+    <div>
+      <h2 class="hm-h2">canary follow-through</h2>
+      <p class="hm-h2-sub">imported token-use alerts correlated with earlier MCP responses.</p>
+    </div>
+  </div>
+  {% if analytics.canary_correlations %}
+  <div class="hm-canary-list">
+    {% for c in analytics.canary_correlations %}
+    <div class="hm-canary-row">
+      <div class="hm-canary-flow">
+        <code>{{ c.canary_marker }}</code>
+        <span>event #{{ c.event_id }}</span>
+        <span>{{ c.exposure_source_ip }}</span>
+        <span>{{ c.later_token_use_ip }}</span>
+      </div>
+      <div class="hm-canary-meta">
+        <span>{{ c.provider_event }}</span>
+        <span>{{ c.token_type }}</span>
+        <span>delay {{ c.delay }}</span>
+        <span>{{ c.hit_relative }}</span>
+      </div>
+      <div class="hm-canary-detail">
+        <code>{{ c.persona }}</code>
+        <code>{{ c.tool_name }}</code>
+        <code>{{ c.target }}</code>
+        <span>{{ c.hit_user_agent }}</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="hm-empty">no imported canary hits correlated in this window.</p>
+  {% endif %}
+</section>
+
 <section class="hm-intel-grid">
   <div class="hm-panel hm-panel--wide">
     <div class="hm-panel-head">

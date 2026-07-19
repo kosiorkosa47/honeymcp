@@ -39,6 +39,7 @@ MCP is a young protocol with a rapidly growing attack surface: **tool poisoning*
 - Handles `initialize`, `tools/list`, `tools/call`, and the common `notifications/*` frames.
 - Records a curated allowlist of high-signal request headers (`MCP-Protocol-Version`, `X-Forwarded-For`, `Authorization`, `Origin`, `Referer`, `CF-Connecting-IP`, `CF-IPCountry`, `GeoIP-Country`, `X-Real-IP`, `Accept`, `User-Agent`, and more) into `client_meta`, and logs non-MCP scan paths (`/.env`, `/.git/config`, ...) as `probe` events that still run through the detectors.
 - Loads **personas** from YAML - server name, version, instructions, and a list of fake tools with canned responses, with optional `{{canary.*}}` and `{{arg.*}}` response templating.
+- Records which canary markers were exposed by each response and can import later canary-alert JSON with `--import-canary-hits`, so the dashboard can correlate `marker -> event_id -> source_ip -> later_token_use_ip` without storing token values.
 - Serves **several personas from one process**, routed by URL path (`/<persona>/mcp`); the default image runs `aws-admin` (cloud ops with live canary credentials), `github-admin`, `vercel-admin`, and `stripe-finance` together, with `postgres-admin` and `filesystem-admin` also bundled.
 - Ships as a **Docker image** for one-command deploy; release builds are cosign-keyless-signed with SPDX + CycloneDX SBOMs attached and **SLSA Level 3 build provenance** verifiable via `gh attestation verify` (recipe in [`docs/SLSA.md`](docs/SLSA.md)).
 - Serves an **operator banner** (research-honeypot disclosure + GDPR contact) at `GET /` and a server-rendered **analyst dashboard** at `/dashboard` (attack classes, campaigns, Geo-IP pulse map, detector co-occurrence heatmap, MCP risk score, live SSE feed, markdown report, Attack Story Timeline, and per-session MCP Sequence Diagram; all assets bundled in the binary, design in [`docs/dashboard-v2-design.md`](docs/dashboard-v2-design.md)). The production Caddy deployment keeps operator endpoints behind a host-local source allowlist plus Basic Auth.
@@ -75,6 +76,15 @@ Inspect collected events:
 
 ```bash
 sqlite3 hive.db 'SELECT method, client_name, response_summary FROM events ORDER BY id DESC LIMIT 20;'
+```
+
+Correlate imported canary alerts:
+
+```bash
+./target/release/honeymcp --db hive.db \
+  --persona aws=personas/aws-admin.yaml \
+  --backfill-canary-exposures \
+  --import-canary-hits canary-alert.json
 ```
 
 For deploying the honeypot on a public VPS with HTTPS, see [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). For day-2 operations — health checks, alert response, triage SQL, backup, scaling — see [`docs/RUNBOOK.md`](docs/RUNBOOK.md). The service-level objectives the project commits to are documented in [`docs/SLOS.md`](docs/SLOS.md).

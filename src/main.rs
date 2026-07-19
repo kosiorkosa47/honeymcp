@@ -8,6 +8,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use tracing::info;
 
+use honeymcp::canary;
 use honeymcp::detect::Registry;
 use honeymcp::logger::Logger;
 use honeymcp::persona::{Persona, PersonaSet};
@@ -84,6 +85,16 @@ struct Cli {
     /// dumps. Only honored together with `--export-stix`.
     #[arg(long, default_value_t = 1000)]
     export_stix_max_sessions: i64,
+
+    /// Import a canary-alert JSON export into SQLite and exit. Stores only
+    /// safe alert metadata plus a raw-object hash for deduplication.
+    #[arg(long, value_name = "PATH")]
+    import_canary_hits: Option<PathBuf>,
+
+    /// Backfill canary marker exposures for existing `tools/call` rows and
+    /// exit. Requires the same `--persona` set used by the running instance.
+    #[arg(long)]
+    backfill_canary_exposures: bool,
 }
 
 #[tokio::main]
@@ -94,6 +105,26 @@ async fn main() -> Result<()> {
 
     if let Some(out_path) = cli.export_stix.as_ref() {
         return run_stix_export(&cli.db, out_path, cli.export_stix_max_sessions).await;
+    }
+
+    if cli.backfill_canary_exposures || cli.import_canary_hits.is_some() {
+        let logger = Logger::open(&cli.db, None)
+            .await
+            .with_context(|| format!("opening sqlite db at {}", cli.db.display()))?;
+
+        if cli.backfill_canary_exposures {
+            if cli.persona.is_empty() {
+                anyhow::bail!("--backfill-canary-exposures requires at least one --persona");
+            }
+            let persona_set = build_persona_set(&cli.persona, cli.default_persona.as_deref())?;
+            run_canary_exposure_backfill(&logger, &persona_set).await?;
+        }
+
+        if let Some(path) = cli.import_canary_hits.as_ref() {
+            run_canary_hit_import(&logger, path).await?;
+        }
+
+        return Ok(());
     }
 
     if cli.persona.is_empty() {
@@ -148,6 +179,60 @@ async fn main() -> Result<()> {
             transport.run(dispatcher).await?;
         }
     }
+    Ok(())
+}
+
+async fn run_canary_hit_import(logger: &Logger, path: &std::path::Path) -> Result<()> {
+    let hits = canary::load_hits_from_path(path)?;
+    let summary = logger.import_canary_hits(&hits).await?;
+    println!(
+        "canary hits import: total={} inserted={} ignored={}",
+        summary.total, summary.inserted, summary.ignored
+    );
+    Ok(())
+}
+
+async fn run_canary_exposure_backfill(logger: &Logger, personas: &PersonaSet) -> Result<()> {
+    let rows = logger.canary_backfill_events().await?;
+    let mut events_seen = 0usize;
+    let mut events_with_markers = 0usize;
+    let mut marker_rows = 0usize;
+
+    for row in rows {
+        events_seen += 1;
+        let params = match row.params.as_deref() {
+            Some(raw) => match serde_json::from_str::<serde_json::Value>(raw) {
+                Ok(v) => v,
+                Err(_) => continue,
+            },
+            None => continue,
+        };
+        let tool_name = match params.get("name").and_then(|v| v.as_str()) {
+            Some(name) => name,
+            None => continue,
+        };
+        let persona = row
+            .persona
+            .as_deref()
+            .and_then(|name| personas.by_name(name))
+            .unwrap_or_else(|| personas.default_persona());
+        let markers = persona
+            .canary_markers_for_tool(tool_name)
+            .unwrap_or_default();
+        if markers.is_empty() {
+            continue;
+        }
+        logger
+            .record_canary_exposures(row.event_id, row.timestamp_ms, &markers)
+            .await?;
+        events_with_markers += 1;
+        marker_rows += markers.len();
+    }
+
+    println!(
+        "canary exposure backfill: scanned={} events_with_markers={} marker_rows={}",
+        events_seen, events_with_markers, marker_rows
+    );
     Ok(())
 }
 

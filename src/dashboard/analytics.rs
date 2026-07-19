@@ -4,7 +4,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::logger::RawEventRow;
+use crate::logger::{CanaryCorrelationRow, RawEventRow};
 
 const MAX_DASHBOARD_ROWS: usize = 5_000;
 
@@ -19,6 +19,7 @@ pub(super) struct DashboardAnalytics {
     pub heatmap: HeatmapForTemplate,
     pub feed_events: Vec<FeedEventForTemplate>,
     pub mcp_risk: McpRiskForTemplate,
+    pub canary_correlations: Vec<CanaryCorrelationForTemplate>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -113,6 +114,30 @@ pub(super) struct McpRiskForTemplate {
     pub unknown_methods: usize,
     pub score: usize,
     pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct CanaryCorrelationForTemplate {
+    pub hit_id: i64,
+    pub hit_iso: String,
+    pub hit_relative: String,
+    pub token_type: String,
+    pub provider_event: String,
+    pub later_token_use_ip: String,
+    pub hit_user_agent: String,
+    pub account_id: String,
+    pub canary_marker: String,
+    pub hit_marker: String,
+    pub event_id: i64,
+    pub exposure_iso: String,
+    pub exposure_relative: String,
+    pub exposure_source_ip: String,
+    pub persona: String,
+    pub method: String,
+    pub tool_name: String,
+    pub target: String,
+    pub delay: String,
+    pub response_summary: String,
 }
 
 #[derive(Debug, Clone)]
@@ -333,6 +358,41 @@ pub(super) fn build_dashboard_analytics(rows: &[RawEventRow], now_ms: i64) -> Da
             .map(|row| feed_event(row, now_ms))
             .collect(),
         mcp_risk: build_mcp_risk(rows),
+        canary_correlations: Vec::new(),
+    }
+}
+
+pub(super) fn canary_correlation(
+    row: &CanaryCorrelationRow,
+    now_ms: i64,
+) -> CanaryCorrelationForTemplate {
+    CanaryCorrelationForTemplate {
+        hit_id: row.hit_id,
+        hit_iso: iso(row.hit_timestamp_ms),
+        hit_relative: relative(row.hit_timestamp_ms, now_ms),
+        token_type: row.token_type.clone().unwrap_or_else(|| "-".into()),
+        provider_event: row.provider_event.clone().unwrap_or_else(|| "-".into()),
+        later_token_use_ip: row
+            .later_token_use_ip
+            .clone()
+            .unwrap_or_else(|| "unknown".into()),
+        hit_user_agent: truncate(row.hit_user_agent.as_deref().unwrap_or("-"), 90),
+        account_id: row.account_id.clone().unwrap_or_else(|| "-".into()),
+        canary_marker: row.canary_marker.clone(),
+        hit_marker: row.hit_marker.clone().unwrap_or_else(|| "inferred".into()),
+        event_id: row.event_id,
+        exposure_iso: iso(row.exposure_timestamp_ms),
+        exposure_relative: relative(row.exposure_timestamp_ms, now_ms),
+        exposure_source_ip: row
+            .exposure_source_ip
+            .clone()
+            .unwrap_or_else(|| "unknown".into()),
+        persona: row.persona.clone().unwrap_or_else(|| "-".into()),
+        method: row.method.clone(),
+        tool_name: tool_name_from_params(row.params.as_deref()).unwrap_or_else(|| "-".into()),
+        target: target_label(row.params.as_deref()),
+        delay: duration(row.delay_ms),
+        response_summary: truncate(&row.response_summary, 90),
     }
 }
 
@@ -399,6 +459,26 @@ pub(super) fn render_markdown_report(
             out.push_str(&format!(
                 "| {} | {} | {} | {} | {} | `{}` |\n",
                 c.source_ip, c.country_code, c.attack_class, c.count, c.duration, c.sample_path
+            ));
+        }
+        out.push('\n');
+    }
+
+    out.push_str("## Canary follow-through\n\n");
+    if analytics.canary_correlations.is_empty() {
+        out.push_str("No imported canary hits correlated in this window.\n\n");
+    } else {
+        out.push_str("| Marker | Event | Source | Later token-use IP | Provider event | Delay |\n");
+        out.push_str("|---|---:|---|---|---|---:|\n");
+        for c in &analytics.canary_correlations {
+            out.push_str(&format!(
+                "| `{}` | {} | {} | {} | {} | {} |\n",
+                c.canary_marker,
+                c.event_id,
+                c.exposure_source_ip,
+                c.later_token_use_ip,
+                c.provider_event,
+                c.delay
             ));
         }
         out.push('\n');
@@ -900,9 +980,33 @@ fn path_label(row: &RawEventRow) -> String {
 }
 
 fn tool_name(row: &RawEventRow) -> Option<String> {
-    let params = row.params.as_deref()?;
+    tool_name_from_params(row.params.as_deref())
+}
+
+fn tool_name_from_params(params: Option<&str>) -> Option<String> {
+    let params = params?;
     let v = serde_json::from_str::<Value>(params).ok()?;
     v.get("name").and_then(|x| x.as_str()).map(str::to_string)
+}
+
+fn target_label(params: Option<&str>) -> String {
+    let Some(params) = params else {
+        return "-".into();
+    };
+    let Ok(v) = serde_json::from_str::<Value>(params) else {
+        return "-".into();
+    };
+    let Some(args) = v.get("arguments") else {
+        return "-".into();
+    };
+    for key in ["secret_name", "secret_id", "name", "path", "bucket", "key"] {
+        if let Some(s) = args.get(key).and_then(|x| x.as_str()) {
+            if !s.trim().is_empty() {
+                return truncate(s.trim(), 90);
+            }
+        }
+    }
+    "-".into()
 }
 
 fn probe_haystack(row: &RawEventRow) -> String {
