@@ -31,7 +31,7 @@ jobs:
       matrix:
         target: [jsonrpc_parse, detector_input]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # libfuzzer requires nightly Rust because it relies on -Z sanitizer
       # flags that aren't stabilized. Pinned via the dtolnay action.
