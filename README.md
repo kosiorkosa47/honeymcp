@@ -11,9 +11,9 @@
 
 > An open-source honeypot for the [Model Context Protocol](https://modelcontextprotocol.io/docs/getting-started/intro) - impersonates a legitimate MCP server to collect threat intelligence on attacks against the MCP ecosystem.
 
-**Status:** Building toward v1.0 on a 28-day sprint. Currently speaks Streamable HTTP (MCP spec 2025-06-18) and legacy HTTP+SSE side by side.
+Built by [ArkLink](https://arklink.co) - an independent AI Security & CyberOps research lab. Trust is the attack surface.
 
-**Live:** [operator banner](http://54.169.235.208/) + [operator-auth dashboard](http://54.169.235.208/dashboard).
+**Status:** Building toward v1.0 on a 28-day sprint. Currently speaks Streamable HTTP (MCP spec 2025-06-18) and legacy HTTP+SSE side by side.
 
 ## What this is
 
